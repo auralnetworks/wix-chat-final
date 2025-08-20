@@ -6,7 +6,6 @@ import os
 import pandas as pd
 import json
 import tempfile
-from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
@@ -28,109 +27,127 @@ bq_client = bigquery.Client(project=PROJECT_ID)
 
 @app.route('/')
 def home():
-    return {"status": "Backend con BigQuery + Gráficos Inteligentes"}
+    return {"status": "Backend Adereso - Consultas Inteligentes"}
 
 @app.route('/api/test', methods=['POST'])
 def test():
     data = request.get_json()
     return jsonify({
-        "text": f"✅ Backend funcionando! Recibí: {data.get('query', 'sin query')}",
-        "chart": {"labels": ["Webhooks Exitosos", "Webhooks Fallidos", "Pendientes"], "values": [45, 8, 2]}
+        "text": f"✅ Backend Adereso funcionando! Recibí: {data.get('query', 'sin query')}",
+        "chart": {"labels": ["Tickets Abiertos", "Tickets Cerrados", "En Proceso"], "values": [25, 45, 8]}
     })
 
-def generate_smart_chart(results, query):
-    """Genera gráficos inteligentes basados en los datos y la consulta"""
+def generate_chart(results, query_type):
+    """Genera gráficos basados en el tipo de consulta y datos"""
     if len(results) == 0:
         return None
     
-    # Si es una consulta de conteo
-    if 'total' in results.columns:
+    if query_type == "count":
         return {
-            "labels": ["Total de Registros"],
-            "values": [int(results['total'].iloc[0])]
+            "labels": ["Total de Tickets"],
+            "values": [int(results.iloc[0, 0])]
         }
-    
-    # Si hay columnas de fecha/tiempo
-    date_cols = [col for col in results.columns if 'date' in col.lower() or 'time' in col.lower() or 'created' in col.lower()]
-    if date_cols:
-        # Agrupar por fecha
-        date_col = date_cols[0]
-        try:
-            results[date_col] = pd.to_datetime(results[date_col])
-            daily_counts = results.groupby(results[date_col].dt.date).size()
+    elif query_type == "estado":
+        return {
+            "labels": results['Estado'].tolist(),
+            "values": results['cantidad'].tolist()
+        }
+    elif query_type == "canal":
+        return {
+            "labels": results['Canal'].tolist(),
+            "values": results['cantidad'].tolist()
+        }
+    elif query_type == "sentimiento":
+        return {
+            "labels": results['Sentimiento_Inicial'].tolist(),
+            "values": results['cantidad'].tolist()
+        }
+    elif query_type == "fecha":
+        return {
+            "labels": results['Fecha_de_inicio'].astype(str).tolist(),
+            "values": results['cantidad'].tolist()
+        }
+    else:
+        # Gráfico por defecto con mensajes
+        if 'Mensajes' in results.columns:
             return {
-                "labels": [str(date) for date in daily_counts.index[-7:]],  # Últimos 7 días
-                "values": daily_counts.values[-7:].tolist()
+                "labels": [f"Ticket {i+1}" for i in range(min(10, len(results)))],
+                "values": results['Mensajes'].head(10).fillna(0).tolist()
             }
-        except:
-            pass
-    
-    # Si hay columnas de estado
-    status_cols = [col for col in results.columns if 'status' in col.lower() or 'state' in col.lower()]
-    if status_cols:
-        status_counts = results[status_cols[0]].value_counts()
         return {
-            "labels": status_counts.index.tolist()[:5],
-            "values": status_counts.values.tolist()[:5]
+            "labels": ["Registros Encontrados"],
+            "values": [len(results)]
         }
-    
-    # Si hay columnas numéricas
-    numeric_cols = results.select_dtypes(include=['int64', 'float64']).columns
-    if len(numeric_cols) > 0:
-        return {
-            "labels": [f"Registro {i+1}" for i in range(min(10, len(results)))],
-            "values": results[numeric_cols[0]].head(10).tolist()
-        }
-    
-    # Fallback: conteo de registros
-    return {
-        "labels": ["Registros Encontrados"],
-        "values": [len(results)]
-    }
 
 @app.route('/api/query', methods=['POST'])
 def query_data():
     try:
         user_query = request.json['query'].lower()
+        query_type = "default"
         
-        # Consultas inteligentes más específicas
+        # Consultas inteligentes con campos reales
         if any(word in user_query for word in ['total', 'count', 'cuántos', 'cantidad']):
             sql = f"SELECT COUNT(*) as total FROM `{TABLE_ID}`"
+            query_type = "count"
+            
+        elif any(word in user_query for word in ['estado', 'status']):
+            sql = f"SELECT Estado, COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE Estado IS NOT NULL GROUP BY Estado ORDER BY cantidad DESC"
+            query_type = "estado"
+            
+        elif any(word in user_query for word in ['canal', 'canales']):
+            sql = f"SELECT Canal, COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE Canal IS NOT NULL GROUP BY Canal ORDER BY cantidad DESC"
+            query_type = "canal"
+            
+        elif any(word in user_query for word in ['sentimiento', 'sentiment']):
+            sql = f"SELECT Sentimiento_Inicial, COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE Sentimiento_Inicial IS NOT NULL GROUP BY Sentimiento_Inicial ORDER BY cantidad DESC"
+            query_type = "sentimiento"
+            
         elif any(word in user_query for word in ['hoy', 'today']):
-            sql = f"SELECT * FROM `{TABLE_ID}` WHERE DATE(timestamp) = CURRENT_DATE() ORDER BY timestamp DESC"
+            sql = f"SELECT * FROM `{TABLE_ID}` WHERE Fecha_de_inicio = CURRENT_DATE() ORDER BY Hora_de_inicio DESC LIMIT 10"
+            
         elif any(word in user_query for word in ['ayer', 'yesterday']):
-            sql = f"SELECT * FROM `{TABLE_ID}` WHERE DATE(timestamp) = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) ORDER BY timestamp DESC"
+            sql = f"SELECT * FROM `{TABLE_ID}` WHERE Fecha_de_inicio = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) ORDER BY Hora_de_inicio DESC LIMIT 10"
+            
         elif any(word in user_query for word in ['semana', 'week']):
-            sql = f"SELECT DATE(timestamp) as fecha, COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE timestamp >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY) GROUP BY DATE(timestamp) ORDER BY fecha"
-        elif any(word in user_query for word in ['mes', 'month']):
-            sql = f"SELECT DATE(timestamp) as fecha, COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE timestamp >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY) GROUP BY DATE(timestamp) ORDER BY fecha"
+            sql = f"SELECT Fecha_de_inicio, COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE Fecha_de_inicio >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY) GROUP BY Fecha_de_inicio ORDER BY Fecha_de_inicio DESC"
+            query_type = "fecha"
+            
+        elif any(word in user_query for word in ['mensajes', 'messages']):
+            sql = f"SELECT ID, Nick_del_Cliente, Mensajes, Mensajes_Enviados, Mensajes_Recibidos FROM `{TABLE_ID}` WHERE Mensajes > 0 ORDER BY Mensajes DESC LIMIT 10"
+            
+        elif any(word in user_query for word in ['clarita', 'cliente']):
+            sql = f"SELECT * FROM `{TABLE_ID}` WHERE LOWER(Nick_del_Cliente) LIKE '%clarita%' ORDER BY Fecha_de_inicio DESC LIMIT 10"
+            
+        elif any(word in user_query for word in ['abordaje', 'sla']):
+            sql = f"SELECT Abordado_en_SLA, COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE Abordado_en_SLA IS NOT NULL GROUP BY Abordado_en_SLA"
+            
         elif any(word in user_query for word in ['últimos', 'recientes', 'latest']):
-            sql = f"SELECT * FROM `{TABLE_ID}` ORDER BY timestamp DESC LIMIT 10"
-        elif any(word in user_query for word in ['status', 'estado']):
-            sql = f"SELECT status, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY status ORDER BY cantidad DESC"
+            sql = f"SELECT ID, Nick_del_Cliente, Estado, Canal, Fecha_de_inicio, Hora_de_inicio FROM `{TABLE_ID}` ORDER BY Fecha_de_inicio DESC, Hora_de_inicio DESC LIMIT 10"
+            
         else:
-            sql = f"SELECT * FROM `{TABLE_ID}` ORDER BY timestamp DESC LIMIT 10"
+            sql = f"SELECT ID, Nick_del_Cliente, Estado, Canal, Mensajes, Fecha_de_inicio FROM `{TABLE_ID}` ORDER BY Fecha_de_inicio DESC LIMIT 10"
         
-        print(f"Ejecutando SQL: {sql}")  # Para debug
+        print(f"Ejecutando SQL: {sql}")
         
         # Ejecutar consulta BigQuery
         results = bq_client.query(sql).to_dataframe()
         
-        # Generar gráfico inteligente
-        chart_data = generate_smart_chart(results, user_query)
+        # Generar gráfico
+        chart_data = generate_chart(results, query_type)
         
         # Procesar con Gemini
         model = genai.GenerativeModel('gemini-1.5-flash')
         data_summary = results.head(5).to_string() if len(results) > 0 else "No hay datos"
         
         prompt = f"""
-        Usuario pregunta: {user_query}
-        Datos de BigQuery (tabla Adereso_WebhookTests): {data_summary}
-        Total de registros encontrados: {len(results)}
+        Usuario pregunta sobre tickets de Adereso: {user_query}
+        Datos encontrados: {data_summary}
+        Total de registros: {len(results)}
         
-        Responde en español de forma conversacional y clara. Si hay datos, explica qué muestran.
-        Si es una consulta de tiempo (hoy, ayer, semana), menciona las fechas específicas.
-        Sé específico con los números y fechas encontrados.
+        Responde en español de forma conversacional y profesional. 
+        Si hay datos específicos como estados, canales, o clientes, menciónalos.
+        Si hay números o estadísticas, resáltalos.
+        Habla como un asistente de atención al cliente de Adereso.
         """
         
         response = model.generate_content(prompt)
@@ -142,8 +159,11 @@ def query_data():
         })
         
     except Exception as e:
-        print(f"Error: {str(e)}")  # Para debug
-        return jsonify({"text": f"Error consultando datos: {str(e)}", "chart": None}), 500
+        print(f"Error: {str(e)}")
+        return jsonify({
+            "text": f"Error consultando datos: {str(e)}", 
+            "chart": None
+        }), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
