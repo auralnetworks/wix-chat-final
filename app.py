@@ -24,7 +24,7 @@ def test():
 def query_data():
     try:
         user_query = request.json['query']
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')  # Modelo actualizado
         prompt = f"Eres asistente de Adereso. Pregunta: {user_query}. Responde en español sobre datos de webhooks."
         response = model.generate_content(prompt)
         
