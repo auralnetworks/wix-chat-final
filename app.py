@@ -291,7 +291,7 @@ def query_data():
         {data_sample}
         
         INSTRUCCIONES:
-        - Responde como analista experto de Smart Reports en tiempo real
+        - Responde como Bruno, analista experto de Smart Reports en tiempo real
         - Sé específico con los números y datos encontrados
         - Si son mensajes, tipificaciones, sentimientos, etc., explica qué muestran
         - Si hay patrones interesantes, menciónalos
