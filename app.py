@@ -26,30 +26,9 @@ if creds_json:
 genai.configure(api_key=GEMINI_API_KEY)
 bq_client = bigquery.Client(project=PROJECT_ID)
 
-# Campos disponibles en la tabla
-AVAILABLE_FIELDS = [
-    "ID", "Fecha_de_inicio", "Hora_de_inicio", "Fecha_de_actualizacion", "Hora_de_actualizacion",
-    "Fecha_de_abordaje", "Hora_de_abordaje", "Fecha_de_termino", "Hora_de_termino", "Estado",
-    "Detalles_del_estado", "Canal", "Cuenta_s", "Sentimiento_Inicial", "Sentimiento_de_Termino",
-    "Tiene_mensajes_publicos", "Tiene_mensajes_privados", "Tiene_ticket_previo", "Respondido",
-    "Nick_del_Cliente", "Asignacion_actual", "Primera_asignacion", "Ultima_asignacion",
-    "Cantidad_de_asignaciones", "Mensajes", "Mensajes_Enviados", "Mensajes_Recibidos",
-    "Texto_del_Primer_Mensaje", "Texto_del_ultimo_Mensaje", "Importante", "Abordado",
-    "Abordado_en_SLA", "Tipificado", "Escalado", "Tiempo_de_Abordaje__Segundos_",
-    "Segundos_Sin_Asignar", "Proactivo", "Departamento", "Cerrado_Por", "Abordado_Por",
-    "Fecha_de_primer_asignacion_humana", "Hora_de_primer_asignacion_humana", "Fecha_de_asignacion",
-    "Hora_de_asignacion", "Creado_en_horario_habil", "Tickets_fusionados",
-    "Tiempo_asignado_sin_abordaje__Segundos_", "Tiempo_de_abordaje_ejecutivo__Segundos_",
-    "Abordado_en_SLA_ejecutivo", "BOT_DERIVATION_Date", "BOT_DERIVATION_Time",
-    "Primer_departamento", "Ultimo_departamento", "Prioridad", "Cliente_Principal",
-    "Primera_asignacion_humana", "Empresa", "Grupo", "Menu_inicial", "Numero_de_servicio",
-    "Tipificaciones", "Tipificaciones_Anidado_1", "Tipificacion_Bot", "Tipificacion_Menu_Clarita",
-    "Tipificacion_Sub_Menu_Clarita", "Identifier"
-]
-
 @app.route('/')
 def home():
-    return {"status": "Backend Adereso - Queries Dinámicas con IA"}
+    return {"status": "Backend Adereso - Optimizado con Identifiers"}
 
 @app.route('/api/test', methods=['POST'])
 def test():
@@ -59,67 +38,191 @@ def test():
         "chart": {"labels": ["Test"], "values": [100]}
     })
 
+def generate_static_sql(user_query):
+    """Genera SQL con patrones estáticos (sin usar Gemini)"""
+    query = user_query.lower()
+    
+    # Conteos totales
+    if any(word in query for word in ['total', 'cuántos', 'cantidad', 'count']):
+        if 'canal' in query:
+            return "SELECT Canal, COUNT(*) as cantidad FROM `esval-435215.webhooks.Adereso_WebhookTests` WHERE Canal IS NOT NULL GROUP BY Canal ORDER BY cantidad DESC"
+        elif 'estado' in query:
+            return "SELECT Estado, COUNT(*) as cantidad FROM `esval-435215.webhooks.Adereso_WebhookTests` WHERE Estado IS NOT NULL GROUP BY Estado ORDER BY cantidad DESC"
+        elif 'departamento' in query:
+            return "SELECT Departamento, COUNT(*) as cantidad FROM `esval-435215.webhooks.Adereso_WebhookTests` WHERE Departamento IS NOT NULL GROUP BY Departamento ORDER BY cantidad DESC"
+        elif 'empresa' in query:
+            return "SELECT Empresa, COUNT(*) as cantidad FROM `esval-435215.webhooks.Adereso_WebhookTests` WHERE Empresa IS NOT NULL GROUP BY Empresa ORDER BY cantidad DESC"
+        else:
+            return "SELECT COUNT(*) as total FROM `esval-435215.webhooks.Adereso_WebhookTests`"
+    
+    # Búsquedas específicas
+    if 'chat' in query:
+        return "SELECT ID, Nick_del_Cliente, Canal, Estado, Mensajes, Mensajes_Enviados, Mensajes_Recibidos, Fecha_de_inicio, Hora_de_inicio, Departamento, Empresa, Identifier FROM `esval-435215.webhooks.Adereso_WebhookTests` WHERE LOWER(Canal) LIKE '%chat%' ORDER BY Fecha_de_inicio DESC, Hora_de_inicio DESC"
+    
+    if 'whatsapp' in query:
+        return "SELECT ID, Nick_del_Cliente, Canal, Estado, Mensajes, Mensajes_Enviados, Mensajes_Recibidos, Fecha_de_inicio, Hora_de_inicio, Departamento, Empresa, Identifier FROM `esval-435215.webhooks.Adereso_WebhookTests` WHERE LOWER(Canal) LIKE '%whatsapp%' ORDER BY Fecha_de_inicio DESC, Hora_de_inicio DESC"
+    
+    if 'clarita' in query:
+        return "SELECT ID, Nick_del_Cliente, Canal, Estado, Mensajes, Mensajes_Enviados, Mensajes_Recibidos, Fecha_de_inicio, Hora_de_inicio, Departamento, Empresa, Identifier FROM `esval-435215.webhooks.Adereso_WebhookTests` WHERE LOWER(Nick_del_Cliente) LIKE '%clarita%' ORDER BY Fecha_de_inicio DESC, Hora_de_inicio DESC"
+    
+    if 'hoy' in query:
+        return "SELECT ID, Nick_del_Cliente, Canal, Estado, Mensajes, Mensajes_Enviados, Mensajes_Recibidos, Hora_de_inicio, Departamento, Empresa, Identifier FROM `esval-435215.webhooks.Adereso_WebhookTests` WHERE Fecha_de_inicio = CURRENT_DATE() ORDER BY Hora_de_inicio DESC"
+    
+    if 'ayer' in query:
+        return "SELECT ID, Nick_del_Cliente, Canal, Estado, Mensajes, Mensajes_Enviados, Mensajes_Recibidos, Fecha_de_inicio, Hora_de_inicio, Departamento, Empresa, Identifier FROM `esval-435215.webhooks.Adereso_WebhookTests` WHERE Fecha_de_inicio = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) ORDER BY Hora_de_inicio DESC"
+    
+    if 'últimos' in query or 'recientes' in query:
+        limit = 50
+        if '5' in query or 'cinco' in query:
+            limit = 5
+        elif '10' in query or 'diez' in query:
+            limit = 10
+        elif '20' in query or 'veinte' in query:
+            limit = 20
+        elif '100' in query or 'cien' in query:
+            limit = 100
+        
+        return f"SELECT ID, Nick_del_Cliente, Estado, Canal, Mensajes, Mensajes_Enviados, Mensajes_Recibidos, Fecha_de_inicio, Hora_de_inicio, Departamento, Empresa, Identifier FROM `esval-435215.webhooks.Adereso_WebhookTests` ORDER BY Fecha_de_inicio DESC, Hora_de_inicio DESC LIMIT {limit}"
+    
+    return None
+
+def generate_comparative_sql(user_query):
+    """Genera SQL para comparativos sin usar Gemini"""
+    query = user_query.lower()
+    
+    # Comparativo ayer vs hoy
+    if any(word in query for word in ['ayer', 'hoy', 'versus', 'vs', 'comparar']):
+        if 'whatsapp' in query:
+            return """
+            SELECT 
+                CASE 
+                    WHEN Fecha_de_inicio = CURRENT_DATE() THEN 'Hoy'
+                    WHEN Fecha_de_inicio = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) THEN 'Ayer'
+                END as periodo,
+                COUNT(*) as cantidad
+            FROM `esval-435215.webhooks.Adereso_WebhookTests` 
+            WHERE Canal = 'Whatsapp' 
+            AND Fecha_de_inicio IN (CURRENT_DATE(), DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY))
+            GROUP BY periodo
+            ORDER BY periodo DESC
+            """
+        else:
+            return """
+            SELECT 
+                CASE 
+                    WHEN Fecha_de_inicio = CURRENT_DATE() THEN 'Hoy'
+                    WHEN Fecha_de_inicio = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) THEN 'Ayer'
+                END as periodo,
+                COUNT(*) as cantidad
+            FROM `esval-435215.webhooks.Adereso_WebhookTests` 
+            WHERE Fecha_de_inicio IN (CURRENT_DATE(), DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY))
+            GROUP BY periodo
+            ORDER BY periodo DESC
+            """
+    
+    if 'hora' in query and 'hoy' in query:
+        return """
+        SELECT 
+            EXTRACT(HOUR FROM PARSE_TIME('%H:%M:%S', Hora_de_inicio)) as hora,
+            COUNT(*) as cantidad
+        FROM `esval-435215.webhooks.Adereso_WebhookTests` 
+        WHERE Fecha_de_inicio = CURRENT_DATE() 
+        AND Hora_de_inicio IS NOT NULL
+        GROUP BY hora 
+        ORDER BY hora
+        """
+    
+    return None
+
 def generate_dynamic_sql(user_query):
-    """Genera SQL dinámicamente usando IA"""
-    
-    # Prompt para que Gemini genere SQL
-    sql_prompt = f"""
-    Eres un experto en SQL y BigQuery. Genera una consulta SQL para la tabla `{TABLE_ID}` basada en esta pregunta del usuario: "{user_query}"
-
-    Campos disponibles: {', '.join(AVAILABLE_FIELDS)}
-
-    REGLAS IMPORTANTES:
-    1. SIEMPRE usa el nombre completo de la tabla: `{TABLE_ID}`
-    2. Si es una consulta de conteo/agrupación, usa GROUP BY y ORDER BY cantidad DESC
-    3. Si pide registros específicos, incluye campos importantes: ID, Nick_del_Cliente, Canal, Estado, Mensajes, Mensajes_Enviados, Mensajes_Recibidos, Fecha_de_inicio, Hora_de_inicio, Departamento, Empresa, Identifier
-    4. Para fechas usa formato YYYY-MM-DD
-    5. Para búsquedas de texto usa LOWER() y LIKE '%texto%'
-    6. Limita resultados con LIMIT (50-200 según el contexto)
-    7. Para análisis temporales usa DATE() y EXTRACT()
-    8. SOLO devuelve la consulta SQL, sin explicaciones
-
-    Ejemplos:
-    - "tickets de hoy" → SELECT ID, Nick_del_Cliente, Canal, Estado FROM `{TABLE_ID}` WHERE Fecha_de_inicio = CURRENT_DATE()
-    - "cuántos por canal" → SELECT Canal, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Canal ORDER BY cantidad DESC
-    - "tickets con más de 10 mensajes" → SELECT ID, Nick_del_Cliente, Mensajes FROM `{TABLE_ID}` WHERE Mensajes > 10 ORDER BY Mensajes DESC
-
-    Consulta SQL:
-    """
-    
+    """Genera SQL dinámicamente usando Gemini (último recurso)"""
     try:
         model = genai.GenerativeModel('gemini-1.5-flash')
+        sql_prompt = f"""
+        Genera SQL para `{TABLE_ID}` basado en: "{user_query}"
+        
+        REGLAS:
+        1. NO uses LIMIT a menos que el usuario pida números específicos
+        2. Para conteos usa COUNT(*) sin LIMIT
+        3. Incluye siempre Identifier en SELECT cuando sea posible
+        4. Solo devuelve la consulta SQL
+        
+        SQL:
+        """
+        
         response = model.generate_content(sql_prompt)
         sql = response.text.strip()
         
-        # Limpiar la respuesta (remover markdown, etc.)
+        # Limpiar respuesta
         sql = re.sub(r'```sql\n?', '', sql)
         sql = re.sub(r'```\n?', '', sql)
         sql = sql.strip()
         
-        # Validación básica de seguridad
+        # Validación de seguridad
         dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE']
         if any(keyword in sql.upper() for keyword in dangerous_keywords):
             return None
-            
+        
         return sql
         
     except Exception as e:
-        print(f"Error generando SQL: {e}")
+        print(f"Error con Gemini: {e}")
         return None
 
-def generate_chart_from_results(results, user_query):
-    """Genera gráfico inteligente basado en los resultados"""
+def generate_chart_from_results(results):
+    """Genera gráfico basado en los resultados usando Identifier"""
     if len(results) == 0:
         return None
     
-    # Si hay una columna 'cantidad', es un análisis agregado
     if 'cantidad' in results.columns:
         return {
             "labels": results.iloc[:, 0].astype(str).tolist()[:15],
             "values": results['cantidad'].tolist()[:15]
         }
     
-    # Si hay columnas numéricas, usar la primera
+    if 'total' in results.columns:
+        return {
+            "labels": ["Total de Tickets"],
+            "values": [int(results['total'].iloc[0])]
+        }
+    
+    # Para tickets individuales, usar Identifier si está disponible
+    if 'Identifier' in results.columns:
+        identifiers = results['Identifier'].head(20).fillna('Sin ID').tolist()
+        
+        # Si hay columna numérica, usarla para los valores
+        numeric_cols = results.select_dtypes(include=['int64', 'float64']).columns
+        if len(numeric_cols) > 0:
+            col = numeric_cols[0]
+            return {
+                "labels": identifiers,
+                "values": results[col].head(20).fillna(0).tolist()
+            }
+        else:
+            # Si no hay columna numérica, usar índice como valor
+            return {
+                "labels": identifiers,
+                "values": list(range(1, len(identifiers) + 1))
+            }
+    
+    # Si hay ID pero no Identifier
+    elif 'ID' in results.columns:
+        ids = results['ID'].head(20).astype(str).tolist()
+        
+        numeric_cols = results.select_dtypes(include=['int64', 'float64']).columns
+        if len(numeric_cols) > 0:
+            col = numeric_cols[0]
+            return {
+                "labels": ids,
+                "values": results[col].head(20).fillna(0).tolist()
+            }
+        else:
+            return {
+                "labels": ids,
+                "values": list(range(1, len(ids) + 1))
+            }
+    
+    # Fallback para otros casos
     numeric_cols = results.select_dtypes(include=['int64', 'float64']).columns
     if len(numeric_cols) > 0:
         col = numeric_cols[0]
@@ -128,11 +231,66 @@ def generate_chart_from_results(results, user_query):
             "values": results[col].head(20).fillna(0).tolist()
         }
     
-    # Fallback: mostrar conteo
     return {
         "labels": ["Registros Encontrados"],
         "values": [len(results)]
     }
+
+def generate_smart_response(user_query, results, sql):
+    """Genera respuesta inteligente sin usar Gemini"""
+    query = user_query.lower()
+    total = len(results)
+    
+    if total == 0:
+        return "No se encontraron registros para tu consulta."
+    
+    # Respuestas para comparativos
+    if 'periodo' in results.columns:
+        hoy_data = results[results['periodo'] == 'Hoy']
+        ayer_data = results[results['periodo'] == 'Ayer']
+        
+        hoy_count = int(hoy_data['cantidad'].iloc[0]) if len(hoy_data) > 0 else 0
+        ayer_count = int(ayer_data['cantidad'].iloc[0]) if len(ayer_data) > 0 else 0
+        
+        diferencia = hoy_count - ayer_count
+        porcentaje = ((diferencia / ayer_count) * 100) if ayer_count > 0 else 0
+        
+        canal_text = "de WhatsApp " if 'whatsapp' in query else ""
+        
+        if diferencia > 0:
+            return f"📈 **Comparativo Ayer vs Hoy** {canal_text}\n\n**Hoy**: {hoy_count:,} tickets\n**Ayer**: {ayer_count:,} tickets\n\n✅ **Incremento**: +{diferencia:,} tickets ({porcentaje:+.1f}%)\n\nHoy ha sido un día más activo que ayer."
+        elif diferencia < 0:
+            return f"📉 **Comparativo Ayer vs Hoy** {canal_text}\n\n**Hoy**: {hoy_count:,} tickets\n**Ayer**: {ayer_count:,} tickets\n\n📉 **Disminución**: {diferencia:,} tickets ({porcentaje:.1f}%)\n\nHoy ha sido un día menos activo que ayer."
+        else:
+            return f"📊 **Comparativo Ayer vs Hoy** {canal_text}\n\n**Hoy**: {hoy_count:,} tickets\n**Ayer**: {ayer_count:,} tickets\n\n➡️ **Sin cambios**: Misma cantidad de tickets ambos días."
+    
+    # Respuestas para análisis por canal
+    if 'Canal' in results.columns:
+        top_canal = results.iloc[0]['Canal']
+        top_count = int(results.iloc[0]['cantidad'])
+        total_canales = len(results)
+        
+        return f"📱 **Análisis por Canal**\n\nSe encontraron **{total_canales}** canales activos:\n\n🥇 **Canal líder**: {top_canal} con {top_count:,} tickets\n\nDistribución completa mostrada en el gráfico."
+    
+    # Respuestas para análisis por hora
+    if 'hora' in results.columns:
+        hora_pico = results.loc[results['cantidad'].idxmax(), 'hora']
+        tickets_pico = int(results.loc[results['cantidad'].idxmax(), 'cantidad'])
+        
+        return f"🕐 **Análisis por Hora - Hoy**\n\n⏰ **Hora pico**: {int(hora_pico)}:00 hrs con {tickets_pico} tickets\n\nDistribución horaria completa en el gráfico. Total analizado: {results['cantidad'].sum():,} tickets de hoy."
+    
+    # Respuestas específicas por canal
+    if 'chat' in query:
+        return f"💬 **Tickets de Chat**\n\nSe encontraron **{total:,}** tickets de chat. Los datos incluyen información completa con Identifiers, mensajes enviados/recibidos y fechas."
+    
+    if 'whatsapp' in query:
+        return f"📱 **Tickets de WhatsApp**\n\nSe encontraron **{total:,}** tickets de WhatsApp. Información completa disponible con Identifiers y estadísticas de mensajes."
+    
+    if 'clarita' in query:
+        return f"👤 **Tickets de Clarita**\n\nSe encontraron **{total:,}** tickets relacionados con Clarita. Los datos incluyen información completa de cada ticket con Identifiers únicos."
+    
+    # Respuesta genérica
+    return f"Consulta ejecutada exitosamente. Se encontraron **{total:,}** registros en total. Los gráficos muestran los Identifiers reales de los tickets."
 
 @app.route('/api/query', methods=['POST'])
 def query_data():
@@ -141,12 +299,21 @@ def query_data():
         
         print(f"Consulta del usuario: {user_query}")
         
-        # Generar SQL dinámicamente
-        sql = generate_dynamic_sql(user_query)
+        # PASO 1: Intentar con patrones estáticos (sin cuota)
+        sql = generate_static_sql(user_query)
+        
+        # PASO 2: Intentar con comparativos (sin cuota)
+        if not sql:
+            sql = generate_comparative_sql(user_query)
+        
+        # PASO 3: Solo usar Gemini como último recurso
+        if not sql:
+            print("Usando Gemini como último recurso...")
+            sql = generate_dynamic_sql(user_query)
         
         if not sql:
             return jsonify({
-                "text": "No pude generar una consulta SQL válida para tu pregunta. ¿Puedes reformularla?",
+                "text": "No pude procesar tu consulta. Intenta con: 'tickets de hoy vs ayer', 'tickets por canal', 'tickets de WhatsApp', 'últimos 10 tickets'",
                 "chart": None
             }), 400
         
@@ -155,36 +322,24 @@ def query_data():
         # Ejecutar consulta
         results = bq_client.query(sql).to_dataframe()
         
-        # Generar gráfico
-        chart_data = generate_chart_from_results(results, user_query)
+        print(f"Registros obtenidos: {len(results)}")
         
-        # Procesar respuesta con Gemini
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        data_summary = results.head(10).to_string() if len(results) > 0 else "No hay datos"
+        # Generar gráfico con Identifiers
+        chart_data = generate_chart_from_results(results)
         
-        response_prompt = f"""
-        El usuario preguntó: "{user_query}"
-        Se ejecutó esta consulta SQL: {sql}
-        Resultados obtenidos: {data_summary}
-        Total de registros: {len(results)}
+        # Generar respuesta SIN usar Gemini (ahorro de cuota)
+        response_text = generate_smart_response(user_query, results, sql)
         
-        Responde en español de forma conversacional y profesional como analista de Adereso.
-        Explica los resultados encontrados de manera clara y útil.
-        Si hay datos específicos importantes, menciónalos.
-        Si hay muchos registros, indica que hay más datos disponibles.
-        """
-        
-        response = model.generate_content(response_prompt)
-        
-        # Preparar datos para mostrar (máximo 20)
-        raw_data = results.head(20).to_dict('records') if len(results) > 0 else []
+        # Para el frontend
+        raw_data = results.head(50).to_dict('records') if len(results) > 0 else []
         
         return jsonify({
-            "text": response.text,
+            "text": response_text,
             "chart": chart_data,
             "data_count": len(results),
             "raw_data": raw_data,
-            "sql_executed": sql  # Para debug
+            "sql_executed": sql,
+            "total_records": len(results)
         })
         
     except Exception as e:
