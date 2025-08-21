@@ -28,7 +28,7 @@ bq_client = bigquery.Client(project=PROJECT_ID)
 
 @app.route('/')
 def home():
-    return {"status": "Backend Adereso - Siempre con Gemini + Tiempo Real"}
+    return {"status": "Backend Adereso - Gráficos Inteligentes + Tarjetas Condicionales"}
 
 @app.route('/api/test', methods=['POST'])
 def test():
@@ -41,7 +41,6 @@ def test():
 def generate_dynamic_sql(user_query):
     """Genera SQL dinámicamente usando Gemini SIEMPRE"""
     
-    # Obtener timestamp actual para contexto
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     sql_prompt = f"""
@@ -95,33 +94,53 @@ def generate_dynamic_sql(user_query):
         return None
 
 def generate_chart_with_identifiers(results):
-    """Genera gráfico usando Identifiers cuando sea posible"""
+    """Genera gráfico inteligente según el tipo de datos"""
     if len(results) == 0:
         return None
     
-    # Para datos agregados (con 'cantidad')
-    if 'cantidad' in results.columns:
+    # 1. COMPARATIVOS (Hoy/Ayer, etc.) - Detectar por estructura
+    if len(results.columns) == 2 and any(word in str(results.iloc[:, 0].tolist()).lower() for word in ['hoy', 'ayer', 'today', 'yesterday']):
         return {
-            "labels": results.iloc[:, 0].astype(str).tolist()[:15],
-            "values": results['cantidad'].tolist()[:15]
+            "labels": results.iloc[:, 0].astype(str).tolist(),
+            "values": results.iloc[:, 1].tolist()
         }
     
-    # Para conteos totales
+    # 2. CONTEOS AGREGADOS (Canal, Estado, Departamento, etc.)
+    if 'cantidad' in results.columns:
+        return {
+            "labels": results.iloc[:, 0].astype(str).tolist()[:10],
+            "values": results['cantidad'].tolist()[:10]
+        }
+    
+    # 3. TOTALES SIMPLES
     if 'total' in results.columns:
         return {
             "labels": ["Total de Tickets"],
             "values": [int(results['total'].iloc[0])]
         }
     
-    # Para tickets individuales con Identifier
-    if 'Identifier' in results.columns:
-        identifiers = results['Identifier'].head(20).fillna('Sin ID').tolist()
+    # 4. ANÁLISIS POR HORA
+    if 'hora' in results.columns:
+        return {
+            "labels": [f"{int(h)}:00" for h in results['hora'].tolist()],
+            "values": results['cantidad'].tolist() if 'cantidad' in results.columns else results['hora'].tolist()
+        }
+    
+    # 5. ANÁLISIS POR FECHA
+    if 'fecha' in results.columns:
+        return {
+            "labels": results['fecha'].astype(str).tolist()[:15],
+            "values": results['cantidad'].tolist()[:15] if 'cantidad' in results.columns else list(range(1, len(results) + 1))
+        }
+    
+    # 6. TICKETS INDIVIDUALES - Solo si hay pocos registros
+    if len(results) <= 20 and 'Identifier' in results.columns:
+        identifiers = results['Identifier'].head(15).fillna('Sin ID').tolist()
         
-        # Usar Mensajes como valor si está disponible
         if 'Mensajes' in results.columns:
             return {
                 "labels": identifiers,
-                "values": results['Mensajes'].head(20).fillna(0).tolist()
+                "values": results['Mensajes'].head(15).fillna(0).tolist()
             }
         else:
             return {
@@ -129,11 +148,35 @@ def generate_chart_with_identifiers(results):
                 "values": list(range(1, len(identifiers) + 1))
             }
     
-    # Fallback
-    return {
-        "labels": ["Registros Encontrados"],
-        "values": [len(results)]
-    }
+    # 7. FALLBACK - No mostrar gráfico para muchos registros individuales
+    return None
+
+def should_show_ticket_cards(user_query, results):
+    """Determina si mostrar tarjetas de tickets individuales"""
+    query = user_query.lower()
+    
+    # Mostrar tarjetas solo cuando se preguntan tickets específicos
+    show_keywords = [
+        'tickets', 'ticket', 'últimos', 'recientes', 'clarita', 
+        'whatsapp', 'chat', 'cliente', 'hoy', 'ayer'
+    ]
+    
+    # NO mostrar para análisis agregados
+    hide_keywords = [
+        'total', 'cuántos', 'cantidad', 'count', 'canal', 'canales',
+        'estado', 'estados', 'departamento', 'empresa', 'hora', 'horas',
+        'vs', 'versus', 'comparar'
+    ]
+    
+    # Si es análisis agregado, no mostrar tarjetas
+    if any(word in query for word in hide_keywords):
+        return False
+    
+    # Si pregunta por tickets específicos y hay pocos resultados, mostrar
+    if any(word in query for word in show_keywords) and len(results) <= 100:
+        return True
+    
+    return False
 
 @app.route('/api/query', methods=['POST'])
 def query_data():
@@ -159,7 +202,7 @@ def query_data():
         
         print(f"Registros obtenidos: {len(results)} a las {current_time}")
         
-        # Generar gráfico con Identifiers
+        # Generar gráfico inteligente
         chart_data = generate_chart_with_identifiers(results)
         
         # SIEMPRE usar Gemini para respuestas dinámicas y específicas
@@ -171,11 +214,11 @@ def query_data():
         # Información adicional del contexto
         context_info = []
         if len(results) > 0:
-            if 'Canal' in results.columns:
+            if 'Canal' in results.columns and len(results) > 1:
                 canales = results['Canal'].value_counts().head(3).to_dict()
                 context_info.append(f"Canales principales: {canales}")
             
-            if 'Estado' in results.columns:
+            if 'Estado' in results.columns and len(results) > 1:
                 estados = results['Estado'].value_counts().head(3).to_dict()
                 context_info.append(f"Estados principales: {estados}")
             
@@ -212,8 +255,9 @@ def query_data():
         
         response = model.generate_content(response_prompt)
         
-        # Preparar datos para el frontend
-        raw_data = results.head(50).to_dict('records') if len(results) > 0 else []
+        # Determinar si mostrar tarjetas de tickets
+        show_cards = should_show_ticket_cards(user_query, results)
+        raw_data = results.head(20).to_dict('records') if show_cards and len(results) > 0 else []
         
         return jsonify({
             "text": response.text,
@@ -221,7 +265,8 @@ def query_data():
             "data_count": len(results),
             "raw_data": raw_data,
             "sql_executed": sql,
-            "timestamp": current_time
+            "timestamp": current_time,
+            "show_ticket_cards": show_cards
         })
         
     except Exception as e:
