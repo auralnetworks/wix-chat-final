@@ -66,6 +66,7 @@ def generate_dynamic_sql(user_query):
     
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
+    # Primero intentar con Gemini
     sql_prompt = f"""
     Eres experto en SQL y BigQuery. Genera una consulta SQL para la tabla `{TABLE_ID}` basada en: "{user_query}"
 
@@ -105,24 +106,45 @@ def generate_dynamic_sql(user_query):
     SQL:
     """
     
-    try:
-        model = genai.GenerativeModel('gemini-pro')
-        response = model.generate_content(sql_prompt)
-        sql = response.text.strip()
-        
-        # Limpiar respuesta
-        sql = sql.replace('```sql', '').replace('```', '').strip()
-        
-        # Validación de seguridad
-        dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE']
-        if any(keyword in sql.upper() for keyword in dangerous_keywords):
-            return None
-        
-        return sql
-        
-    except Exception as e:
-        print(f"Error generando SQL: {e}")
-        return None
+    # Intentar con diferentes modelos de Gemini
+    models_to_try = ['gemini-1.5-pro', 'gemini-pro', 'gemini-1.0-pro']
+    
+    for model_name in models_to_try:
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(sql_prompt)
+            sql = response.text.strip()
+            
+            # Limpiar respuesta
+            sql = sql.replace('```sql', '').replace('```', '').strip()
+            
+            # Validación de seguridad
+            dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE']
+            if any(keyword in sql.upper() for keyword in dangerous_keywords):
+                continue
+            
+            print(f"SQL generado con {model_name}: {sql}")
+            return sql
+            
+        except Exception as e:
+            print(f"Error con {model_name}: {e}")
+            continue
+    
+    # Fallback: generar SQL básico sin Gemini
+    query_lower = user_query.lower()
+    
+    if 'total' in query_lower or 'cuántos' in query_lower:
+        return f"SELECT COUNT(*) as total FROM `{TABLE_ID}`"
+    elif 'hoy' in query_lower:
+        return f"SELECT * FROM `{TABLE_ID}` WHERE DATE(Fecha_de_inicio) = CURRENT_DATE() LIMIT 20"
+    elif 'ayer' in query_lower:
+        return f"SELECT * FROM `{TABLE_ID}` WHERE DATE(Fecha_de_inicio) = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) LIMIT 20"
+    elif 'canal' in query_lower:
+        return f"SELECT Canal, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Canal ORDER BY cantidad DESC"
+    elif 'estado' in query_lower:
+        return f"SELECT Estado, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Estado ORDER BY cantidad DESC"
+    else:
+        return f"SELECT * FROM `{TABLE_ID}` LIMIT 20"
 
 def generate_chart_with_identifiers(results):
     """Genera gráfico usando Identifiers cuando sea posible"""
@@ -276,8 +298,8 @@ def query_data():
         # Generar tickets
         tickets_data = generate_tickets_data(results, user_query)
         
-        # SIEMPRE usar Gemini para respuestas dinámicas y específicas
-        model = genai.GenerativeModel('gemini-pro')
+        # Intentar usar Gemini para respuestas dinámicas
+        response_text = f"📊 Encontré {len(results)} registros para tu consulta '{user_query}' a las {current_time}"
         
         # Preparar contexto rico para Gemini
         data_sample = results.head(10).to_string() if len(results) > 0 else "No hay datos"
@@ -301,10 +323,21 @@ def query_data():
         RESPUESTA:
         """
         
-        response = model.generate_content(response_prompt)
+        # Intentar con diferentes modelos
+        models_to_try = ['gemini-1.5-pro', 'gemini-pro', 'gemini-1.0-pro']
+        
+        for model_name in models_to_try:
+            try:
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(response_prompt)
+                response_text = response.text
+                break
+            except Exception as e:
+                print(f"Error con {model_name} para respuesta: {e}")
+                continue
         
         return jsonify({
-            "text": response.text,
+            "text": response_text,
             "chart": chart_data,
             "tickets": tickets_data,
             "data_count": len(results),
