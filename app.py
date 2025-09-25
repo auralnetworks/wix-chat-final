@@ -6,13 +6,14 @@ import os
 import pandas as pd
 import json
 import tempfile
+import requests
 from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
 
 # Configuración
-GEMINI_API_KEY = "AIzaSyC7OceU-fwISiyihJsDDv51kMQEAkzEQ0k"
+GEMINI_API_KEY = "AIzaSyCbNt5deM5N9zRbaSZAFkGmlbjHvuOuRgk"  # Nueva API key
 PROJECT_ID = "esval-435215"
 TABLE_ID = "esval-435215.webhooks.Adereso_WebhookTests"
 
@@ -107,7 +108,7 @@ def generate_dynamic_sql(user_query):
     """
     
     # Intentar con diferentes modelos de Gemini
-    models_to_try = ['gemini-1.5-pro', 'gemini-pro', 'gemini-1.0-pro']
+    models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash']
     
     for model_name in models_to_try:
         try:
@@ -123,11 +124,11 @@ def generate_dynamic_sql(user_query):
             if any(keyword in sql.upper() for keyword in dangerous_keywords):
                 continue
             
-            print(f"SQL generado con {model_name}: {sql}")
+            print(f"✅ SQL generado con {model_name}: {sql}")
             return sql
             
         except Exception as e:
-            print(f"Error con {model_name}: {e}")
+            print(f"❌ Error con {model_name}: {e}")
             continue
     
     # Fallback: generar SQL básico sin Gemini
@@ -143,6 +144,18 @@ def generate_dynamic_sql(user_query):
         return f"SELECT Canal, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Canal ORDER BY cantidad DESC"
     elif 'estado' in query_lower:
         return f"SELECT Estado, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Estado ORDER BY cantidad DESC"
+    elif 'sentimiento' in query_lower:
+        return f"SELECT Sentimiento_Inicial, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Sentimiento_Inicial ORDER BY cantidad DESC"
+    elif 'tipificacion' in query_lower and 'bot' in query_lower:
+        return f"SELECT Tipificacion_Bot, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Tipificacion_Bot ORDER BY cantidad DESC"
+    elif 'menu' in query_lower:
+        return f"SELECT Menu_inicial, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Menu_inicial ORDER BY cantidad DESC"
+    elif 'escalado' in query_lower:
+        return f"SELECT * FROM `{TABLE_ID}` WHERE Escalado = 'true' OR Escalado = '1' LIMIT 20"
+    elif 'mensaje' in query_lower and 'inicial' in query_lower:
+        return f"SELECT Identifier, Texto_del_Primer_Mensaje FROM `{TABLE_ID}` WHERE Texto_del_Primer_Mensaje IS NOT NULL LIMIT 20"
+    elif 'mensaje' in query_lower and ('final' in query_lower or 'ultimo' in query_lower):
+        return f"SELECT Identifier, Texto_del_ultimo_Mensaje FROM `{TABLE_ID}` WHERE Texto_del_ultimo_Mensaje IS NOT NULL LIMIT 20"
     else:
         return f"SELECT * FROM `{TABLE_ID}` LIMIT 20"
 
@@ -298,43 +311,58 @@ def query_data():
         # Generar tickets
         tickets_data = generate_tickets_data(results, user_query)
         
-        # Intentar usar Gemini para respuestas dinámicas
-        response_text = f"📊 Encontré {len(results)} registros para tu consulta '{user_query}' a las {current_time}"
-        
-        # Preparar contexto rico para Gemini
-        data_sample = results.head(10).to_string() if len(results) > 0 else "No hay datos"
-        
-        response_prompt = f"""
-        CONSULTA DEL USUARIO: "{user_query}"
-        TIMESTAMP ACTUAL: {current_time}
-        TOTAL DE REGISTROS: {len(results)}
-        
-        MUESTRA DE DATOS:
-        {data_sample}
-        
-        INSTRUCCIONES:
-        - Responde como Bruno, analista experto de Smart Reports en tiempo real
-        - Sé específico con los números y datos encontrados
-        - Si son mensajes, tipificaciones, sentimientos, etc., explica qué muestran
-        - Si hay patrones interesantes, menciónalos
-        - Usa emojis para hacer la respuesta más visual
-        - Responde en español de forma conversacional y profesional
-        
-        RESPUESTA:
-        """
-        
-        # Intentar con diferentes modelos
-        models_to_try = ['gemini-1.5-pro', 'gemini-pro', 'gemini-1.0-pro']
-        
-        for model_name in models_to_try:
-            try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(response_prompt)
-                response_text = response.text
-                break
-            except Exception as e:
-                print(f"Error con {model_name} para respuesta: {e}")
-                continue
+        # SIEMPRE usar Gemini para respuestas dinámicas y específicas
+        try:
+            models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash']
+            response_text = f"📊 Encontré {len(results)} registros para '{user_query}' 🕰️ {current_time}"
+            
+            # Preparar contexto rico para Gemini
+            data_sample = results.head(10).to_string() if len(results) > 0 else "No hay datos"
+            
+            response_prompt = f"""
+            CONSULTA DEL USUARIO: "{user_query}"
+            TIMESTAMP ACTUAL: {current_time}
+            TOTAL DE REGISTROS: {len(results)}
+            
+            MUESTRA DE DATOS:
+            {data_sample}
+            
+            INSTRUCCIONES:
+            - Responde como Bruno, analista experto de Smart Reports en tiempo real
+            - Sé específico con los números y datos encontrados
+            - Si son mensajes, tipificaciones, sentimientos, etc., explica qué muestran
+            - Si hay patrones interesantes, menciónalos
+            - Usa emojis para hacer la respuesta más visual
+            - Responde en español de forma conversacional y profesional
+            
+            RESPUESTA:
+            """
+            
+            for model_name in models_to_try:
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    response = model.generate_content(response_prompt)
+                    response_text = response.text
+                    print(f"✅ Respuesta generada con {model_name}")
+                    break
+                except Exception as e:
+                    print(f"❌ Error con {model_name} para respuesta: {e}")
+                    continue
+            
+        except Exception as e:
+            print(f"Error general con Gemini para respuesta: {e}")
+            # Fallback mejorado
+            if len(results) > 0:
+                if 'cantidad' in results.columns:
+                    total_items = results['cantidad'].sum()
+                    response_text = f"📊 Encontré {len(results)} categorías con un total de {total_items} registros para '{user_query}' 🕰️ {current_time}"
+                elif 'total' in results.columns:
+                    total = results['total'].iloc[0]
+                    response_text = f"📊 Total de registros: {total} para '{user_query}' 🕰️ {current_time}"
+                else:
+                    response_text = f"📊 Encontré {len(results)} registros para '{user_query}' 🕰️ {current_time}"
+            else:
+                response_text = f"⚠️ No se encontraron registros para '{user_query}' 🕰️ {current_time}"
         
         return jsonify({
             "text": response_text,
