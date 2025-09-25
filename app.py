@@ -137,34 +137,34 @@ def generate_dynamic_sql(user_query):
             continue
     
     print(f"🔄 Todos los modelos de Gemini fallaron, usando fallback para: {user_query}")
+    
+    # Fallback inteligente basado en tu código original
+    query_lower = user_query.lower()
         
-        # Fallback inteligente basado en tu código original
-        query_lower = user_query.lower()
-        
-        if 'total' in query_lower or 'cuántos' in query_lower:
-            return f"SELECT COUNT(*) as total FROM `{TABLE_ID}`"
-        elif 'hoy' in query_lower:
-            return f"SELECT * FROM `{TABLE_ID}` WHERE DATE(Fecha_de_inicio) = CURRENT_DATE() LIMIT 20"
-        elif 'ayer' in query_lower:
-            return f"SELECT * FROM `{TABLE_ID}` WHERE DATE(Fecha_de_inicio) = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) LIMIT 20"
-        elif 'canal' in query_lower:
-            return f"SELECT Canal, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Canal ORDER BY cantidad DESC"
-        elif 'estado' in query_lower:
-            return f"SELECT Estado, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Estado ORDER BY cantidad DESC"
-        elif 'sentimiento' in query_lower:
-            return f"SELECT Sentimiento_Inicial, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Sentimiento_Inicial ORDER BY cantidad DESC"
-        elif 'tipificacion' in query_lower and 'bot' in query_lower:
-            return f"SELECT Tipificacion_Bot, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Tipificacion_Bot ORDER BY cantidad DESC"
-        elif 'menu' in query_lower:
-            return f"SELECT Menu_inicial, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Menu_inicial ORDER BY cantidad DESC"
-        elif 'escalado' in query_lower:
-            return f"SELECT * FROM `{TABLE_ID}` WHERE Escalado = 'true' OR Escalado = '1' LIMIT 20"
-        elif 'mensaje' in query_lower and 'inicial' in query_lower:
-            return f"SELECT Identifier, Texto_del_Primer_Mensaje FROM `{TABLE_ID}` WHERE Texto_del_Primer_Mensaje IS NOT NULL LIMIT 20"
-        elif 'mensaje' in query_lower and ('final' in query_lower or 'ultimo' in query_lower):
-            return f"SELECT Identifier, Texto_del_ultimo_Mensaje FROM `{TABLE_ID}` WHERE Texto_del_ultimo_Mensaje IS NOT NULL LIMIT 20"
-        else:
-            return f"SELECT * FROM `{TABLE_ID}` LIMIT 20"
+    if 'total' in query_lower or 'cuántos' in query_lower:
+        return f"SELECT COUNT(*) as total FROM `{TABLE_ID}`"
+    elif 'hoy' in query_lower:
+        return f"SELECT * FROM `{TABLE_ID}` WHERE DATE(Fecha_de_inicio) = CURRENT_DATE() LIMIT 20"
+    elif 'ayer' in query_lower:
+        return f"SELECT * FROM `{TABLE_ID}` WHERE DATE(Fecha_de_inicio) = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) LIMIT 20"
+    elif 'canal' in query_lower:
+        return f"SELECT Canal, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Canal ORDER BY cantidad DESC"
+    elif 'estado' in query_lower:
+        return f"SELECT Estado, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Estado ORDER BY cantidad DESC"
+    elif 'sentimiento' in query_lower:
+        return f"SELECT Sentimiento_Inicial, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Sentimiento_Inicial ORDER BY cantidad DESC"
+    elif 'tipificacion' in query_lower and 'bot' in query_lower:
+        return f"SELECT Tipificacion_Bot, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Tipificacion_Bot ORDER BY cantidad DESC"
+    elif 'menu' in query_lower:
+        return f"SELECT Menu_inicial, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Menu_inicial ORDER BY cantidad DESC"
+    elif 'escalado' in query_lower:
+        return f"SELECT * FROM `{TABLE_ID}` WHERE Escalado = 'true' OR Escalado = '1' LIMIT 20"
+    elif 'mensaje' in query_lower and 'inicial' in query_lower:
+        return f"SELECT Identifier, Texto_del_Primer_Mensaje FROM `{TABLE_ID}` WHERE Texto_del_Primer_Mensaje IS NOT NULL LIMIT 20"
+    elif 'mensaje' in query_lower and ('final' in query_lower or 'ultimo' in query_lower):
+        return f"SELECT Identifier, Texto_del_ultimo_Mensaje FROM `{TABLE_ID}` WHERE Texto_del_ultimo_Mensaje IS NOT NULL LIMIT 20"
+    else:
+        return f"SELECT * FROM `{TABLE_ID}` LIMIT 20"
 
 def generate_chart_with_identifiers(results):
     """Genera gráfico usando Identifiers cuando sea posible"""
