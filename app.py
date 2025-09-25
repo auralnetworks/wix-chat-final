@@ -277,7 +277,7 @@ def query_data():
         tickets_data = generate_tickets_data(results, user_query)
         
         # SIEMPRE usar Gemini para respuestas dinámicas y específicas
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-pro')
         
         # Preparar contexto rico para Gemini
         data_sample = results.head(10).to_string() if len(results) > 0 else "No hay datos"
