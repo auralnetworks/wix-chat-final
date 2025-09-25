@@ -105,25 +105,66 @@ def generate_dynamic_sql(user_query):
     SQL:
     """
     
-    try:
-        # Usar gemini-1.5-flash que es el que funciona ahora
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        response = model.generate_content(sql_prompt)
-        sql = response.text.strip()
+    # Intentar con múltiples modelos de Gemini para SQL inteligente
+    models_to_try = [
+        'gemini-1.5-flash',
+        'gemini-1.5-pro', 
+        'gemini-2.0-flash',
+        'gemini-pro'
+    ]
+    
+    for model_name in models_to_try:
+        try:
+            print(f"🧪 Intentando generar SQL con {model_name}...")
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(sql_prompt)
+            sql = response.text.strip()
+            
+            # Limpiar respuesta
+            sql = sql.replace('```sql', '').replace('```', '').strip()
+            
+            # Validación de seguridad
+            dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE']
+            if any(keyword in sql.upper() for keyword in dangerous_keywords):
+                print(f"⚠️ SQL peligroso detectado con {model_name}, probando siguiente...")
+                continue
+            
+            print(f"✅ SQL INTELIGENTE generado con {model_name}: {sql}")
+            return sql
+            
+        except Exception as e:
+            print(f"❌ Error con {model_name}: {str(e)[:100]}...")
+            continue
+    
+    print(f"🔄 Todos los modelos de Gemini fallaron, usando fallback para: {user_query}")
         
-        # Limpiar respuesta
-        sql = sql.replace('```sql', '').replace('```', '').strip()
+        # Fallback inteligente basado en tu código original
+        query_lower = user_query.lower()
         
-        # Validación de seguridad
-        dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE']
-        if any(keyword in sql.upper() for keyword in dangerous_keywords):
-            return None
-        
-        return sql
-        
-    except Exception as e:
-        print(f"Error generando SQL: {e}")
-        return None
+        if 'total' in query_lower or 'cuántos' in query_lower:
+            return f"SELECT COUNT(*) as total FROM `{TABLE_ID}`"
+        elif 'hoy' in query_lower:
+            return f"SELECT * FROM `{TABLE_ID}` WHERE DATE(Fecha_de_inicio) = CURRENT_DATE() LIMIT 20"
+        elif 'ayer' in query_lower:
+            return f"SELECT * FROM `{TABLE_ID}` WHERE DATE(Fecha_de_inicio) = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY) LIMIT 20"
+        elif 'canal' in query_lower:
+            return f"SELECT Canal, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Canal ORDER BY cantidad DESC"
+        elif 'estado' in query_lower:
+            return f"SELECT Estado, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Estado ORDER BY cantidad DESC"
+        elif 'sentimiento' in query_lower:
+            return f"SELECT Sentimiento_Inicial, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Sentimiento_Inicial ORDER BY cantidad DESC"
+        elif 'tipificacion' in query_lower and 'bot' in query_lower:
+            return f"SELECT Tipificacion_Bot, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Tipificacion_Bot ORDER BY cantidad DESC"
+        elif 'menu' in query_lower:
+            return f"SELECT Menu_inicial, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Menu_inicial ORDER BY cantidad DESC"
+        elif 'escalado' in query_lower:
+            return f"SELECT * FROM `{TABLE_ID}` WHERE Escalado = 'true' OR Escalado = '1' LIMIT 20"
+        elif 'mensaje' in query_lower and 'inicial' in query_lower:
+            return f"SELECT Identifier, Texto_del_Primer_Mensaje FROM `{TABLE_ID}` WHERE Texto_del_Primer_Mensaje IS NOT NULL LIMIT 20"
+        elif 'mensaje' in query_lower and ('final' in query_lower or 'ultimo' in query_lower):
+            return f"SELECT Identifier, Texto_del_ultimo_Mensaje FROM `{TABLE_ID}` WHERE Texto_del_ultimo_Mensaje IS NOT NULL LIMIT 20"
+        else:
+            return f"SELECT * FROM `{TABLE_ID}` LIMIT 20"
 
 def generate_chart_with_identifiers(results):
     """Genera gráfico usando Identifiers cuando sea posible"""
@@ -278,34 +319,62 @@ def query_data():
         tickets_data = generate_tickets_data(results, user_query)
         
         # SIEMPRE usar Gemini para respuestas dinámicas y específicas
-        model = genai.GenerativeModel('gemini-1.5-flash')  # Cambio aquí también
+        models_for_response = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash', 'gemini-pro']
+        response_text = None
         
-        # Preparar contexto rico para Gemini
-        data_sample = results.head(10).to_string() if len(results) > 0 else "No hay datos"
+        for model_name in models_for_response:
+            try:
+                print(f"🧪 Intentando respuesta con {model_name}...")
+                model = genai.GenerativeModel(model_name)
+            
+            # Preparar contexto rico para Gemini
+            data_sample = results.head(10).to_string() if len(results) > 0 else "No hay datos"
+            
+            response_prompt = f"""
+            CONSULTA DEL USUARIO: "{user_query}"
+            TIMESTAMP ACTUAL: {current_time}
+            TOTAL DE REGISTROS: {len(results)}
+            
+            MUESTRA DE DATOS:
+            {data_sample}
+            
+            INSTRUCCIONES:
+            - Responde como Bruno, analista experto de Smart Reports en tiempo real
+            - Sé específico con los números y datos encontrados
+            - Si son mensajes, tipificaciones, sentimientos, etc., explica qué muestran
+            - Si hay patrones interesantes, menciónalos
+            - Usa emojis para hacer la respuesta más visual
+            - Responde en español de forma conversacional y profesional
+            
+            RESPUESTA:
+            """
+            
+                response = model.generate_content(response_prompt)
+                response_text = response.text
+                print(f"✅ Respuesta generada con {model_name}")
+                break
+                
+            except Exception as e:
+                print(f"❌ Error con {model_name} para respuesta: {str(e)[:50]}...")
+                continue
         
-        response_prompt = f"""
-        CONSULTA DEL USUARIO: "{user_query}"
-        TIMESTAMP ACTUAL: {current_time}
-        TOTAL DE REGISTROS: {len(results)}
-        
-        MUESTRA DE DATOS:
-        {data_sample}
-        
-        INSTRUCCIONES:
-        - Responde como Bruno, analista experto de Smart Reports en tiempo real
-        - Sé específico con los números y datos encontrados
-        - Si son mensajes, tipificaciones, sentimientos, etc., explica qué muestran
-        - Si hay patrones interesantes, menciónalos
-        - Usa emojis para hacer la respuesta más visual
-        - Responde en español de forma conversacional y profesional
-        
-        RESPUESTA:
-        """
-        
-        response = model.generate_content(response_prompt)
+        if not response_text:
+            print(f"🔄 Todos los modelos fallaron para respuesta, usando fallback")
+            # Fallback para respuestas
+            if len(results) > 0:
+                if 'cantidad' in results.columns:
+                    total_items = results['cantidad'].sum()
+                    response_text = f"📊 ¡Hola! Soy Bruno 🚀 Encontré {len(results)} categorías con un total de {total_items} registros para '{user_query}' a las {current_time} 🕰️"
+                elif 'total' in results.columns:
+                    total = results['total'].iloc[0]
+                    response_text = f"📊 ¡Hola! Soy Bruno 🚀 El total de registros es: {total} para '{user_query}' a las {current_time} 🕰️"
+                else:
+                    response_text = f"📊 ¡Hola! Soy Bruno 🚀 Encontré {len(results)} registros para '{user_query}' a las {current_time} 🕰️"
+            else:
+                response_text = f"⚠️ ¡Hola! Soy Bruno 🚀 No encontré registros para '{user_query}' a las {current_time} 🕰️"
         
         return jsonify({
-            "text": response.text,
+            "text": response_text,
             "chart": chart_data,
             "tickets": tickets_data,
             "data_count": len(results),
