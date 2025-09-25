@@ -12,7 +12,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Configuración
-GEMINI_API_KEY = "AIzaSyC7OceU-fwISiyihJsDDv51kMQEAkzEQ0k"
+GEMINI_API_KEY = "AIzaSyCbNt5deM5N9zRbaSZAFkGmlbjHvuOuRgk"  # Nueva API key que funciona
 PROJECT_ID = "esval-435215"
 TABLE_ID = "esval-435215.webhooks.Adereso_WebhookTests"
 
@@ -106,7 +106,8 @@ def generate_dynamic_sql(user_query):
     """
     
     try:
-        model = genai.GenerativeModel('gemini-pro')
+        # Usar gemini-1.5-flash que es el que funciona ahora
+        model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(sql_prompt)
         sql = response.text.strip()
         
@@ -277,7 +278,7 @@ def query_data():
         tickets_data = generate_tickets_data(results, user_query)
         
         # SIEMPRE usar Gemini para respuestas dinámicas y específicas
-        model = genai.GenerativeModel('gemini-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')  # Cambio aquí también
         
         # Preparar contexto rico para Gemini
         data_sample = results.head(10).to_string() if len(results) > 0 else "No hay datos"
