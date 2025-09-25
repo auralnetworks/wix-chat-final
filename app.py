@@ -12,7 +12,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Configuración
-GEMINI_API_KEY = "AIzaSyCbNt5deM5N9zRbaSZAFkGmlbjHvuOuRgk"  # Nueva API key que funciona
+GEMINI_API_KEY = "AIzaSyCbNt5deM5N9zRbaSZAFkGmlbjHvuOuRgk"
 PROJECT_ID = "esval-435215"
 TABLE_ID = "esval-435215.webhooks.Adereso_WebhookTests"
 
@@ -106,12 +106,7 @@ def generate_dynamic_sql(user_query):
     """
     
     # Intentar con múltiples modelos de Gemini para SQL inteligente
-    models_to_try = [
-        'gemini-1.5-flash',
-        'gemini-1.5-pro', 
-        'gemini-2.0-flash',
-        'gemini-pro'
-    ]
+    models_to_try = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash', 'gemini-pro']
     
     for model_name in models_to_try:
         try:
@@ -138,9 +133,9 @@ def generate_dynamic_sql(user_query):
     
     print(f"🔄 Todos los modelos de Gemini fallaron, usando fallback para: {user_query}")
     
-    # Fallback inteligente basado en tu código original
+    # Fallback inteligente
     query_lower = user_query.lower()
-        
+    
     if 'total' in query_lower or 'cuántos' in query_lower:
         return f"SELECT COUNT(*) as total FROM `{TABLE_ID}`"
     elif 'hoy' in query_lower:
@@ -326,29 +321,29 @@ def query_data():
             try:
                 print(f"🧪 Intentando respuesta con {model_name}...")
                 model = genai.GenerativeModel(model_name)
-            
-            # Preparar contexto rico para Gemini
-            data_sample = results.head(10).to_string() if len(results) > 0 else "No hay datos"
-            
-            response_prompt = f"""
-            CONSULTA DEL USUARIO: "{user_query}"
-            TIMESTAMP ACTUAL: {current_time}
-            TOTAL DE REGISTROS: {len(results)}
-            
-            MUESTRA DE DATOS:
-            {data_sample}
-            
-            INSTRUCCIONES:
-            - Responde como Bruno, analista experto de Smart Reports en tiempo real
-            - Sé específico con los números y datos encontrados
-            - Si son mensajes, tipificaciones, sentimientos, etc., explica qué muestran
-            - Si hay patrones interesantes, menciónalos
-            - Usa emojis para hacer la respuesta más visual
-            - Responde en español de forma conversacional y profesional
-            
-            RESPUESTA:
-            """
-            
+                
+                # Preparar contexto rico para Gemini
+                data_sample = results.head(10).to_string() if len(results) > 0 else "No hay datos"
+                
+                response_prompt = f"""
+                CONSULTA DEL USUARIO: "{user_query}"
+                TIMESTAMP ACTUAL: {current_time}
+                TOTAL DE REGISTROS: {len(results)}
+                
+                MUESTRA DE DATOS:
+                {data_sample}
+                
+                INSTRUCCIONES:
+                - Responde como Bruno, analista experto de Smart Reports en tiempo real
+                - Sé específico con los números y datos encontrados
+                - Si son mensajes, tipificaciones, sentimientos, etc., explica qué muestran
+                - Si hay patrones interesantes, menciónalos
+                - Usa emojis para hacer la respuesta más visual
+                - Responde en español de forma conversacional y profesional
+                
+                RESPUESTA:
+                """
+                
                 response = model.generate_content(response_prompt)
                 response_text = response.text
                 print(f"✅ Respuesta generada con {model_name}")
