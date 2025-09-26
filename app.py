@@ -171,7 +171,7 @@ def query_data():
         query_job = bq_client.query(sql, job_config=job_config)
         
         try:
-            results = query_job.result(timeout=30, max_results=50)
+            results = query_job.result(timeout=130, max_results=50)
             results = results.to_dataframe()
         except Exception as timeout_error:
             app.logger.error(f"TIMEOUT: {str(timeout_error)}")
