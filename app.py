@@ -66,30 +66,65 @@ def handle_options():
 
 @app.route('/')
 def home():
-    return {"status": "Backend Bruno - Modelo Correcto"}
+    return {"status": "Backend Bruno - Modelos Reales"}
 
-def get_available_model():
-    """Encuentra el modelo Gemini disponible"""
-    models_to_try = [
+@app.route('/api/list-models', methods=['GET'])
+def list_models():
+    """Lista los modelos disponibles"""
+    try:
+        models = genai.list_models()
+        available_models = []
+        
+        for model in models:
+            if 'generateContent' in model.supported_generation_methods:
+                available_models.append({
+                    "name": model.name,
+                    "display_name": model.display_name,
+                    "description": model.description[:100] if model.description else ""
+                })
+        
+        return jsonify({
+            "available_models": available_models,
+            "count": len(available_models)
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+def get_working_model():
+    """Encuentra un modelo que realmente funcione"""
+    
+    # Modelos reales que existen en Gemini API
+    real_models = [
+        'gemini-1.5-flash-latest',
+        'gemini-1.5-pro-latest', 
         'gemini-pro',
-        'gemini-1.5-pro', 
-        'models/gemini-pro',
-        'models/gemini-1.5-pro'
+        'gemini-1.5-flash',
+        'gemini-1.5-pro'
     ]
     
-    for model_name in models_to_try:
+    for model_name in real_models:
         try:
+            app.logger.info(f"MODELO: Probando {model_name}")
             model = genai.GenerativeModel(model_name)
-            app.logger.info(f"MODELO: Usando {model_name}")
-            return model
+            
+            # Test simple
+            test_response = model.generate_content("Di 'hola'")
+            
+            if test_response and test_response.text:
+                app.logger.info(f"MODELO: ✅ {model_name} FUNCIONA")
+                return model, model_name
+            else:
+                app.logger.warning(f"MODELO: {model_name} no responde")
+                
         except Exception as e:
-            app.logger.warning(f"MODELO: {model_name} no disponible: {e}")
+            app.logger.warning(f"MODELO: {model_name} error: {str(e)[:50]}")
             continue
     
     raise Exception("Ningún modelo Gemini disponible")
 
 def generate_dynamic_sql(user_query):
-    """Genera SQL dinámicamente usando Gemini con modelo correcto"""
+    """Genera SQL dinámicamente usando Gemini"""
     
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -107,6 +142,7 @@ def generate_dynamic_sql(user_query):
     - "mensajes iniciales" → SELECT Identifier, Texto_del_Primer_Mensaje FROM `{TABLE_ID}` LIMIT 20
     - "tipificaciones bot" → SELECT Tipificacion_Bot, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Tipificacion_Bot
     - "tickets por canal" → SELECT Canal, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Canal ORDER BY cantidad DESC
+    - "últimos tickets" → SELECT Identifier, Estado, Canal, Fecha_de_inicio FROM `{TABLE_ID}` ORDER BY Fecha_de_inicio DESC LIMIT 20
     - "whatsapp" → SELECT Identifier, Estado, Canal FROM `{TABLE_ID}` WHERE LOWER(Canal) LIKE '%whatsapp%' LIMIT 20
     - "escalados" → SELECT Identifier, Estado FROM `{TABLE_ID}` WHERE Escalado = 'true' LIMIT 20
 
@@ -116,6 +152,7 @@ def generate_dynamic_sql(user_query):
     3. Para búsquedas de texto usa LOWER() y LIKE '%texto%'
     4. Incluye siempre Identifier cuando sea posible
     5. LIMIT 20 máximo para memoria
+    6. Para "últimos" usa ORDER BY Fecha_de_inicio DESC
 
     IMPORTANTE: Solo devuelve la consulta SQL, sin explicaciones ni markdown.
 
@@ -125,7 +162,9 @@ def generate_dynamic_sql(user_query):
     try:
         app.logger.info(f"GEMINI: Generando SQL para: {user_query}")
         
-        model = get_available_model()
+        model, model_name = get_working_model()
+        app.logger.info(f"GEMINI: Usando modelo: {model_name}")
+        
         response = model.generate_content(sql_prompt)
         
         if not response or not response.text:
@@ -169,8 +208,8 @@ def query_data():
         
         if not sql:
             return jsonify({
-                "text": "Error: No se pudo generar SQL válida",
-                "chart": None,
+                "text": "❌ Error: No se pudo generar SQL válida. Verifica /api/list-models",
+                "chart": {"labels": ["Error"], "values": [0]},
                 "tickets": []
             }), 400
         
@@ -214,12 +253,12 @@ def query_data():
         
         # Generar respuesta con Gemini
         try:
-            model = get_available_model()
+            model, model_name = get_working_model()
             response_prompt = f"""
-            Usuario: "{user_query}"
-            Registros: {len(results)}
+            Usuario preguntó: "{user_query}"
+            Encontrados: {len(results)} registros
             
-            Responde como Bruno, analista experto. Sé específico. Usa emojis. Máximo 2 líneas.
+            Responde como Bruno, analista experto de Smart Reports. Sé específico con los números. Usa emojis. Máximo 2 líneas.
             """
             
             response = model.generate_content(response_prompt)
