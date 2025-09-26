@@ -107,6 +107,10 @@ def generate_dynamic_sql(user_query):
     - "Canal Email" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'EMAIL'
     - "tickets de Chat" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'CHAT'
     - "tickets de Twitter" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'TWITTER'
+    - "detalles de WhatsApp" → SELECT Identifier, Canal, Estado, Nick_del_Cliente, Mensajes, Fecha_de_inicio FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'WHATSAPP' LIMIT 20
+    - "detalles de Email" → SELECT Identifier, Canal, Estado, Nick_del_Cliente, Mensajes, Fecha_de_inicio FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'EMAIL' LIMIT 20
+    - "dame detalles de WhatsApp" → SELECT Identifier, Canal, Estado, Nick_del_Cliente, Mensajes, Fecha_de_inicio FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'WHATSAPP' LIMIT 20
+    - "dame detalles de Email" → SELECT Identifier, Canal, Estado, Nick_del_Cliente, Mensajes, Fecha_de_inicio FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'EMAIL' LIMIT 20
     - "últimos tickets" → SELECT Identifier, Estado, Canal, Fecha_de_inicio FROM `{TABLE_ID}` ORDER BY Fecha_de_inicio DESC LIMIT 20
 
     REGLAS CRÍTICAS:
@@ -227,6 +231,40 @@ def query_data():
             MUESTRA DE DATOS:
             {data_sample}
             
+            INSTRUCCIONES:
+            - Responde como Bruno, analista experto de Smart Reports en tiempo real
+            - Se especifico con los numeros y datos encontrados
+            - Si son mensajes, tipificaciones, sentimientos, etc., explica que muestran
+            - Si hay patrones interesantes, mencionalos
+            - Usa emojis para hacer la respuesta mas visual
+            - Responde en espanol de forma conversacional y profesional
+            - IMPORTANTE: Si la consulta es sobre un canal especifico (WhatsApp, Email, etc.) y los datos incluyen la columna Canal, analiza SOLO los registros de ese canal
+            
+            RESPUESTA:
+            """
+            
+            response = model.generate_content(response_prompt)
+            text_response = response.text if response and response.text else f"Hola! Soy Bruno. Encontre {len(results)} registros."
+        except Exception as e:
+            app.logger.error(f"GEMINI ERROR: {str(e)}")
+            text_response = f"Hola! Soy Bruno. Encontre {len(results)} registros."
+        
+        return jsonify({
+            "text": text_response,
+            "chart": chart,
+            "tickets": tickets[:20]
+        })
+        
+    except Exception as e:
+        app.logger.error(f"ERROR: {str(e)}")
+        return jsonify({
+            "text": f"Error: {str(e)}",
+            "chart": {"labels": ["Error"], "values": [0]},
+            "tickets": []
+        }), 500
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
             INSTRUCCIONES:
             - Responde como Bruno, analista experto de Smart Reports en tiempo real
             - Se especifico con los numeros y datos encontrados
