@@ -236,6 +236,45 @@ def query_data():
             
             INSTRUCCIONES:
             - Responde como Bruno, analista experto de Smart Reports en tiempo real
+            - Se especifico con los numeros y datos encontrados
+            - Si son mensajes, tipificaciones, sentimientos, etc., explica que muestran
+            - Si hay patrones interesantes, mencionalos
+            - Usa emojis para hacer la respuesta mas visual
+            - Responde en espanol de forma conversacional y profesional
+            
+            RESPUESTA:
+            """
+            
+            response = model.generate_content(response_prompt)
+            text_response = response.text if response and response.text else f"Hola! Soy Bruno. Encontre {len(results)} registros."
+        except Exception as e:
+            app.logger.error(f"GEMINI ERROR: {str(e)}")
+            text_response = f"Hola! Soy Bruno. Encontre {len(results)} registros."
+        
+        return jsonify({
+            "text": text_response,
+            "chart": chart,
+            "tickets": tickets[:20]
+        })
+        
+    except Exception as e:
+        app.logger.error(f"ERROR: {str(e)}")
+        return jsonify({
+            "text": f"Error: {str(e)}",
+            "chart": {"labels": ["Error"], "values": [0]},
+            "tickets": []
+        }), 500
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)  CONSULTA DEL USUARIO: "{user_query}"
+            TIMESTAMP ACTUAL: {current_time}
+            TOTAL DE REGISTROS: {len(results)}
+            
+            MUESTRA DE DATOS:
+            {data_sample}
+            
+            INSTRUCCIONES:
+            - Responde como Bruno, analista experto de Smart Reports en tiempo real
             - Sé específico con los números y datos encontrados
             - Si son mensajes, tipificaciones, sentimientos, etc., explica qué muestran
             - Si hay patrones interesantes, menciónalos
