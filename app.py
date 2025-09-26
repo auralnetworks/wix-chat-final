@@ -207,25 +207,70 @@ def query_data():
                     ticket[col] = str(value)
             tickets.append(ticket)
         
-        # Generar respuesta con Gemini
+        # Generar respuesta con Gemini - ANÁLISIS DETALLADO
         try:
             model, model_name = get_working_model()
             
+            # Crear resumen de datos para análisis
+            data_summary = ""
+            if 'cantidad' in results.columns and len(results) > 0:
+                total_tickets = results['cantidad'].sum()
+                top_canal = results.iloc[0, 0]
+                top_cantidad = results.iloc[0]['cantidad']
+                porcentaje = round((top_cantidad / total_tickets) * 100, 1)
+                data_summary = f"Total: {total_tickets:,} tickets. Líder: {top_canal} ({top_cantidad:,} - {porcentaje}%)"
+            else:
+                data_summary = f"{len(results)} registros encontrados"
+            
             response_prompt = f"""
-            Eres Bruno, analista experto de Smart Reports de Adereso. 
+            Eres Bruno, analista experto de Smart Reports de Adereso.
             
-            Usuario preguntó: "{user_query}"
-            Encontrados: {len(results)} registros
+            CONSULTA: "{user_query}"
+            RESUMEN: {data_summary}
             
-            MUESTRA DE DATOS (primeros 3):
-            {results.head(3).to_string() if len(results) > 0 else 'No hay datos'}
+            DATOS COMPLETOS:
+            {results.to_string()}
             
+            INSTRUCCIONES CRÍTICAS:
+            - Inicia OBLIGATORIAMENTE con "¡Hola! Soy Bruno 👨💼"
+            - Analiza los números: menciona totales, porcentajes, comparaciones
+            - Si es por canal: "WhatsApp domina con X tickets (Y%), seguido de..."
+            - Usa emojis específicos: 📱 WhatsApp, 📧 Email, 💬 Chat, 🐦 Twitter
+            - Da insights reales: "Esto representa el X% del total", "Y supera a Z por..."
+            - Máximo 4 líneas pero con análisis profundo
+            - NO seas genérico, sé específico con los datos
+            
+            RESPUESTA:
+            """
+            
+            response = model.generate_content(response_prompt)
+            text_response = response.text if response and response.text else f"¡Hola! Soy Bruno 👨💼 Encontré {len(results)} registros."
+        except Exception as e:
+            app.logger.error(f"GEMINI ERROR: {str(e)}")
+            text_response = f"¡Hola! Soy Bruno 👨💼 Encontré {len(results)} registros."
+        
+        return jsonify({
+            "text": text_response,
+            "chart": chart,
+            "tickets": tickets[:20]
+        })
+        
+    except Exception as e:
+        app.logger.error(f"ERROR: {str(e)}")
+        return jsonify({
+            "text": f"❌ Error: {str(e)}",
+            "chart": {"labels": ["Error"], "values": [0]},
+            "tickets": []
+        }), 500
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)     
             INSTRUCCIONES:
-            - Inicia SIEMPRE con "¡Hola! Soy Bruno 👨‍💼"
-            - Sé específico con el total: {len(results)} registros
-            - Usa emojis para hacer la respuesta visual
-            - Responde en español de forma profesional pero amigable
-            - Máximo 3 líneas
+            - Inicia con "¡Hola! Soy Bruno 👨💼"
+            - Da análisis real: menciona números específicos, porcentajes, patrones
+            - Si es por canal, identifica el líder y compara volúmenes
+            - Usa emojis relevantes (📱 WhatsApp, 📧 Email, 💬 Chat, 🐦 Twitter)
+            - Máximo 4 líneas con insights valiosos
             
             RESPUESTA:
             """
