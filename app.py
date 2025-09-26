@@ -63,19 +63,48 @@ def query():
         # SQL simple por defecto
         sql = f"SELECT Identifier, Estado, Canal FROM `{TABLE_ID}` LIMIT 3"
         
-        # Intentar Gemini
+        # Gemini con poder completo
         try:
             model = genai.GenerativeModel('gemini-1.5-flash')
-            prompt = f"SQL BigQuery para '{user_query}': SELECT campos FROM `{TABLE_ID}` LIMIT 3"
+            
+            prompt = f"""
+            Genera SQL para BigQuery tabla `{TABLE_ID}` basada en: "{user_query}"
+            
+            Campos: Identifier, Estado, Canal, Fecha_de_inicio, Mensajes, Sentimiento_Inicial, Escalado, Tipificacion_Bot
+            
+            Ejemplos:
+            - "whatsapp" → SELECT Identifier, Estado, Canal FROM `{TABLE_ID}` WHERE LOWER(Canal) LIKE '%whatsapp%' LIMIT 10
+            - "hoy" → SELECT Identifier, Estado FROM `{TABLE_ID}` WHERE DATE(Fecha_de_inicio) = CURRENT_DATE() LIMIT 10
+            - "total" → SELECT COUNT(*) as total FROM `{TABLE_ID}`
+            - "por canal" → SELECT Canal, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Canal LIMIT 10
+            - "escalados" → SELECT Identifier, Estado FROM `{TABLE_ID}` WHERE Escalado = 'true' LIMIT 10
+            
+            REGLAS:
+            1. SIEMPRE LIMIT 10 máximo
+            2. Para fechas usar DATE(Fecha_de_inicio)
+            3. Para conteos usar COUNT(*) as cantidad
+            4. Solo SQL válido
+            
+            SQL:
+            """
+            
             response = model.generate_content(prompt)
             
             if response and response.text:
-                gemini_sql = response.text.strip().replace('```', '').replace('sql', '')
-                if 'SELECT' in gemini_sql.upper():
+                gemini_sql = response.text.strip()
+                gemini_sql = gemini_sql.replace('```sql', '').replace('```', '').strip()
+                
+                if 'SELECT' in gemini_sql.upper() and len(gemini_sql) > 15:
+                    # Forzar LIMIT si no existe
+                    if 'LIMIT' not in gemini_sql.upper() and 'COUNT(' not in gemini_sql.upper():
+                        gemini_sql += ' LIMIT 10'
+                    
                     sql = gemini_sql
-                    print(f"Gemini SQL: {sql}")
-        except:
-            print("Gemini falló, usando SQL por defecto")
+                    print(f"🤖 Gemini SQL inteligente: {sql}")
+                else:
+                    print(f"❌ SQL inválido de Gemini: {gemini_sql}")
+        except Exception as e:
+            print(f"❌ Error Gemini: {e}")
         
         # Ejecutar consulta
         query_job = bq_client.query(sql)
@@ -90,11 +119,37 @@ def query():
                 "canal": str(row[2]) if len(row) > 2 else "N/A"
             })
         
-        # Respuesta simple
+        # Respuesta inteligente
+        if len(rows) == 0:
+            text = "No se encontraron resultados para tu consulta"
+            chart = {"labels": ["Sin datos"], "values": [0]}
+            tickets = []
+        else:
+            # Detectar tipo de consulta para respuesta inteligente
+            columns = [field.name for field in results.schema] if hasattr(results, 'schema') else []
+            
+            if 'cantidad' in columns:
+                total = sum(int(row.get('cantidad', 0)) for row in rows if 'cantidad' in row)
+                text = f"Análisis completado: {len(rows)} categorías con {total} registros totales"
+                chart = {
+                    "labels": [str(row.get(columns[0], 'N/A')) for row in rows[:8]],
+                    "values": [int(row.get('cantidad', 0)) for row in rows[:8]]
+                }
+                tickets = []
+            elif 'total' in columns:
+                total = int(rows[0].get('total', 0)) if rows else 0
+                text = f"Total de registros encontrados: {total}"
+                chart = {"labels": ["Total"], "values": [total]}
+                tickets = []
+            else:
+                text = f"Se encontraron {len(rows)} registros que coinciden con tu consulta: '{user_query}'"
+                chart = {"labels": ["Registros"], "values": [len(rows)]}
+                tickets = rows[:8]
+        
         response_data = {
-            "text": f"Encontrados {len(rows)} registros",
-            "chart": {"labels": ["Registros"], "values": [len(rows)]},
-            "tickets": rows
+            "text": text,
+            "chart": chart,
+            "tickets": tickets
         }
         
         print(f"Enviando respuesta: {len(rows)} registros")
