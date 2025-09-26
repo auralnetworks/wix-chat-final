@@ -97,23 +97,29 @@ def generate_dynamic_sql(user_query):
     CAMPOS DISPONIBLES:
     {ALL_FIELDS}
 
-    EJEMPLOS:
+    EJEMPLOS EXACTOS:
     - "tickets por canal" → SELECT Canal, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Canal ORDER BY cantidad DESC
-    - "cuántos tickets de WhatsApp" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE Canal = 'WhatsApp'
-    - "tickets de WhatsApp" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE Canal = 'WhatsApp'
-    - "Canal WhatsApp" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE Canal = 'WhatsApp'
+    - "cuántos tickets de WhatsApp" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'WHATSAPP'
+    - "tickets de WhatsApp" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'WHATSAPP'
+    - "tickets de Email" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'EMAIL'
+    - "cuántos tickets de Email" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'EMAIL'
+    - "tickets de email" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'EMAIL'
+    - "Canal Email" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'EMAIL'
+    - "tickets de Chat" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'CHAT'
+    - "tickets de Twitter" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'TWITTER'
     - "últimos tickets" → SELECT Identifier, Estado, Canal, Fecha_de_inicio FROM `{TABLE_ID}` ORDER BY Fecha_de_inicio DESC LIMIT 20
-    - "últimos usuarios" → SELECT Identifier, Nick_del_Cliente, Canal, Fecha_de_inicio FROM `{TABLE_ID}` ORDER BY Fecha_de_inicio DESC LIMIT 20
-    - "detalles usuarios" → SELECT Nick_del_Cliente, Canal, Estado, Mensajes FROM `{TABLE_ID}` WHERE Nick_del_Cliente IS NOT NULL LIMIT 20
 
-    REGLAS:
+    REGLAS CRÍTICAS:
     1. USA SOLO los campos de la lista disponible
     2. Para usuarios usa Nick_del_Cliente (NO Client_Name ni UserID)
     3. Para conteos usa COUNT(*) as cantidad
-    4. Para búsquedas de canal específico usa WHERE Canal = 'NombreCanal' (exacto)
-    5. Los valores de Canal son: 'WhatsApp', 'Email', 'Chat', 'Twitter'
-    6. LIMIT 20 máximo
-    7. Solo SQL, sin explicaciones
+    4. Para búsquedas de canal específico USA SIEMPRE: WHERE UPPER(Canal) = 'VALOR_EN_MAYUSCULAS'
+    5. Si usuario dice "email", "Email", "EMAIL" usa WHERE UPPER(Canal) = 'EMAIL'
+    6. Si usuario dice "whatsapp", "WhatsApp", "WHATSAPP" usa WHERE UPPER(Canal) = 'WHATSAPP'
+    7. Si usuario dice "chat", "Chat", "CHAT" usa WHERE UPPER(Canal) = 'CHAT'
+    8. Si usuario dice "twitter", "Twitter", "TWITTER" usa WHERE UPPER(Canal) = 'TWITTER'
+    9. LIMIT 20 máximo
+    10. Solo SQL, sin explicaciones
 
     SQL:
     """
@@ -171,7 +177,7 @@ def query_data():
         query_job = bq_client.query(sql, job_config=job_config)
         
         try:
-            results = query_job.result(timeout=130, max_results=50)
+            results = query_job.result(timeout=120, max_results=50)
             results = results.to_dataframe()
         except Exception as timeout_error:
             app.logger.error(f"TIMEOUT: {str(timeout_error)}")
