@@ -163,7 +163,7 @@ def query_data():
         
         # Ejecutar consulta con timeout
         job_config = bigquery.QueryJobConfig(
-            maximum_bytes_billed=100000000,
+            maximum_bytes_billed=450000000,
             use_query_cache=True,
             dry_run=False
         )
