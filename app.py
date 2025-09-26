@@ -160,10 +160,26 @@ def query_data():
         
         app.logger.info(f"SQL: {sql}")
         
-        # Ejecutar consulta
-        query_job = bq_client.query(sql)
-        results = query_job.result(max_results=25)
-        results = results.to_dataframe()
+        # Ejecutar consulta con timeout
+        job_config = bigquery.QueryJobConfig(
+            maximum_bytes_billed=100000000,  # 100MB máximo
+            use_query_cache=True,
+            dry_run=False
+        )
+        
+        query_job = bq_client.query(sql, job_config=job_config)
+        
+        # Timeout de 30 segundos
+        try:
+            results = query_job.result(timeout=30, max_results=50)
+            results = results.to_dataframe()
+        except Exception as timeout_error:
+            app.logger.error(f"TIMEOUT: {str(timeout_error)}")
+            return jsonify({
+                "text": "⏰ Consulta muy lenta. Intenta con una consulta más específica.",
+                "chart": {"labels": ["Timeout"], "values": [0]},
+                "tickets": []
+            }), 408
         
         app.logger.info(f"RESULTADOS: {len(results)} registros")
         
