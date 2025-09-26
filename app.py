@@ -28,28 +28,6 @@ if creds_json:
 genai.configure(api_key=GEMINI_API_KEY)
 bq_client = bigquery.Client(project=PROJECT_ID)
 
-# TODOS LOS CAMPOS DISPONIBLES
-ALL_FIELDS = """
-ID, Fecha_de_inicio, Hora_de_inicio, Fecha_de_actualizacion, Hora_de_actualizacion, 
-Fecha_de_abordaje, Hora_de_abordaje, Fecha_de_termino, Hora_de_termino, Estado, 
-Detalles_del_estado, Canal, Cuenta_s, Sentimiento_Inicial, Sentimiento_de_Termino, 
-Tiene_mensajes_publicos, Tiene_mensajes_privados, Tiene_ticket_previo, Respondido, 
-Nick_del_Cliente, Asignacion_actual, Primera_asignacion, Ultima_asignacion, 
-Cantidad_de_asignaciones, Mensajes, Mensajes_Enviados, Mensajes_Recibidos, 
-Texto_del_Primer_Mensaje, Texto_del_ultimo_Mensaje, Importante, Abordado, 
-Abordado_en_SLA, Tipificado, Escalado, Tiempo_de_Abordaje__Segundos_, 
-Segundos_Sin_Asignar, Proactivo, Departamento, Cerrado_Por, Abordado_Por, 
-Fecha_de_primer_asignacion_humana, Hora_de_primer_asignacion_humana, 
-Fecha_de_asignacion, Hora_de_asignacion, Creado_en_horario_habil, 
-Tickets_fusionados, Tiempo_asignado_sin_abordaje__Segundos_, 
-Tiempo_de_abordaje_ejecutivo__Segundos_, Abordado_en_SLA_ejecutivo, 
-BOT_DERIVATION_Date, BOT_DERIVATION_Time, Primer_departamento, 
-Ultimo_departamento, Prioridad, Cliente_Principal, Primera_asignacion_humana, 
-Empresa, Grupo, Menu_inicial, Numero_de_servicio, Tipificaciones, 
-Tipificaciones_Anidado_1, Tipificacion_Bot, Tipificacion_Menu_Clarita, 
-Tipificacion_Sub_Menu_Clarita, Identifier
-"""
-
 # CORS
 @app.after_request
 def after_request(response):
@@ -68,55 +46,19 @@ def handle_options():
 def home():
     return {"status": "Backend Bruno - Modelos Reales"}
 
-@app.route('/api/list-models', methods=['GET'])
-def list_models():
-    """Lista los modelos disponibles"""
-    try:
-        models = genai.list_models()
-        available_models = []
-        
-        for model in models:
-            if 'generateContent' in model.supported_generation_methods:
-                available_models.append({
-                    "name": model.name,
-                    "display_name": model.display_name,
-                    "description": model.description[:100] if model.description else ""
-                })
-        
-        return jsonify({
-            "available_models": available_models,
-            "count": len(available_models)
-        })
-        
-    except Exception as e:
-        return jsonify({"error": str(e)})
-
 def get_working_model():
-    """Encuentra un modelo que realmente funcione usando los nombres EXACTOS"""
+    """Encuentra un modelo que funcione"""
+    models = ['models/gemini-2.5-flash', 'models/gemini-1.5-flash', 'models/gemini-1.5-pro']
     
-    # Modelos EXACTOS de tu lista que funcionan
-    exact_models = [
-        'models/gemini-1.5-flash-latest',
-        'models/gemini-1.5-pro-latest', 
-        'models/gemini-1.5-flash',
-        'models/gemini-1.5-pro',
-        'models/gemini-2.5-flash',
-        'models/gemini-2.0-flash'
-    ]
-    
-    for model_name in exact_models:
+    for model_name in models:
         try:
             app.logger.info(f"MODELO: Probando {model_name}")
             model = genai.GenerativeModel(model_name)
-            
-            # Test simple
             test_response = model.generate_content("Di 'hola'")
             
             if test_response and test_response.text:
                 app.logger.info(f"MODELO: ✅ {model_name} FUNCIONA")
                 return model, model_name
-            else:
-                app.logger.warning(f"MODELO: {model_name} no responde")
                 
         except Exception as e:
             app.logger.warning(f"MODELO: {model_name} error: {str(e)[:50]}")
@@ -127,35 +69,18 @@ def get_working_model():
 def generate_dynamic_sql(user_query):
     """Genera SQL dinámicamente usando Gemini"""
     
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
     sql_prompt = f"""
-    Eres experto en SQL y BigQuery. Genera una consulta SQL para la tabla `{TABLE_ID}` basada en: "{user_query}"
+    Genera SQL para BigQuery tabla `{TABLE_ID}` basada en: "{user_query}"
 
-    CONTEXTO ACTUAL:
-    - Fecha/Hora actual: {current_time}
-    - Tabla: {TABLE_ID}
-    
-    TODOS LOS CAMPOS DISPONIBLES:
-    {ALL_FIELDS}
-
-    EJEMPLOS DE CONSULTAS INTELIGENTES:
-    - "mensajes iniciales" → SELECT Identifier, Texto_del_Primer_Mensaje FROM `{TABLE_ID}` LIMIT 20
-    - "tipificaciones bot" → SELECT Tipificacion_Bot, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Tipificacion_Bot
+    EJEMPLOS:
     - "tickets por canal" → SELECT Canal, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Canal ORDER BY cantidad DESC
     - "últimos tickets" → SELECT Identifier, Estado, Canal, Fecha_de_inicio FROM `{TABLE_ID}` ORDER BY Fecha_de_inicio DESC LIMIT 20
     - "whatsapp" → SELECT Identifier, Estado, Canal FROM `{TABLE_ID}` WHERE LOWER(Canal) LIKE '%whatsapp%' LIMIT 20
-    - "escalados" → SELECT Identifier, Estado FROM `{TABLE_ID}` WHERE Escalado = 'true' LIMIT 20
 
-    REGLAS IMPORTANTES:
-    1. Para "hoy" usa: WHERE DATE(Fecha_de_inicio) = CURRENT_DATE()
-    2. Para conteos usa COUNT(*) as cantidad
-    3. Para búsquedas de texto usa LOWER() y LIKE '%texto%'
-    4. Incluye siempre Identifier cuando sea posible
-    5. LIMIT 20 máximo para memoria
-    6. Para "últimos" usa ORDER BY Fecha_de_inicio DESC
-
-    IMPORTANTE: Solo devuelve la consulta SQL, sin explicaciones ni markdown.
+    REGLAS:
+    1. Para conteos usa COUNT(*) as cantidad
+    2. LIMIT 20 máximo
+    3. Solo SQL, sin explicaciones
 
     SQL:
     """
@@ -169,24 +94,12 @@ def generate_dynamic_sql(user_query):
         response = model.generate_content(sql_prompt)
         
         if not response or not response.text:
-            app.logger.error("GEMINI: No devolvió respuesta")
             return None
             
-        sql = response.text.strip()
-        app.logger.info(f"GEMINI: Respuesta: {sql[:100]}...")
+        sql = response.text.strip().replace('```sql', '').replace('```', '').strip()
         
-        # Limpiar respuesta
-        sql = sql.replace('```sql', '').replace('```', '').strip()
-        
-        # Validación de seguridad
-        dangerous = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE']
-        if any(word in sql.upper() for word in dangerous):
-            app.logger.error(f"GEMINI: SQL peligroso: {sql}")
-            return None
-        
-        # Validar SQL
-        if not sql or len(sql) < 10 or 'SELECT' not in sql.upper():
-            app.logger.error(f"GEMINI: SQL inválido: {sql}")
+        # Validación básica
+        if not sql or 'SELECT' not in sql.upper():
             return None
         
         app.logger.info(f"GEMINI: SQL válido: {sql}")
@@ -200,8 +113,6 @@ def generate_dynamic_sql(user_query):
 def query_data():
     try:
         user_query = request.json['query']
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
         app.logger.info(f"QUERY: {user_query}")
         
         # Generar SQL con Gemini
@@ -209,7 +120,7 @@ def query_data():
         
         if not sql:
             return jsonify({
-                "text": "❌ Error: No se pudo generar SQL válida. Verifica /api/list-models",
+                "text": "❌ Error: No se pudo generar SQL válida",
                 "chart": {"labels": ["Error"], "values": [0]},
                 "tickets": []
             }), 400
@@ -229,11 +140,6 @@ def query_data():
                 "labels": results.iloc[:, 0].astype(str).tolist()[:10],
                 "values": results['cantidad'].tolist()[:10]
             }
-        elif 'total' in results.columns:
-            chart = {
-                "labels": ["Total"],
-                "values": [int(results['total'].iloc[0])]
-            }
         else:
             chart = {
                 "labels": ["Registros"],
@@ -248,27 +154,23 @@ def query_data():
                 value = row[col]
                 if pd.isna(value):
                     ticket[col] = None
-                elif isinstance(value, (pd.Timestamp, datetime)):
-                    ticket[col] = value.strftime('%Y-%m-%d %H:%M:%S')
                 else:
                     ticket[col] = str(value)
             tickets.append(ticket)
         
         # Generar respuesta con Gemini
-        model, model_name = get_working_model()
-        
-        response_prompt = f"""
-        Analiza estos datos y responde en español:
-        
-        CONSULTA: {user_query}
-        DATOS: {len(results)} registros
-        
-        {results.to_string()}
-        
-        Respuesta clara con emojis:
-        """
-        
         try:
+            model, model_name = get_working_model()
+            
+            response_prompt = f"""
+            Usuario preguntó: "{user_query}"
+            Encontrados: {len(results)} registros
+            
+            {results.to_string()}
+            
+            Responde en español, claro y con emojis:
+            """
+            
             response = model.generate_content(response_prompt)
             text_response = response.text if response and response.text else f"📊 Encontré {len(results)} registros."
         except:
@@ -289,110 +191,4 @@ def query_data():
         }), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)      tickets = []
-        for _, row in results.iterrows():
-            ticket = {}
-            for col in results.columns:
-                value = row[col]
-                if pd.isna(value):
-                    ticket[col] = None
-                elif isinstance(value, (pd.Timestamp, datetime)):
-                    ticket[col] = value.strftime('%Y-%m-%d %H:%M:%S')
-                else:
-                    ticket[col] = str(value)
-            tickets.append(ticket)
-        
-        # Generar respuesta con Gemini
-        model, model_name = get_working_model()
-        
-        response_prompt = f"""
-        Analiza estos datos de tickets y genera una respuesta clara y útil:
-        
-        CONSULTA ORIGINAL: {user_query}
-        DATOS ENCONTRADOS: {len(results)} registros
-        
-        RESULTADOS:
-        {results.to_string()}
-        
-        Genera una respuesta en español que:
-        1. Resuma los hallazgos principales
-        2. Use emojis apropiados
-        3. Sea clara y directa
-        4. Incluya números específicos
-        
-        Respuesta:
-        """
-        
-        try:
-            response = model.generate_content(response_prompt)
-            text_response = response.text if response and response.text else f"📊 Encontré {len(results)} registros para tu consulta."
-        except:
-            text_response = f"📊 Encontré {len(results)} registros para tu consulta."
-        
-        return jsonify({
-            "text": text_response,
-            "chart": chart,
-            "tickets": tickets[:20]  # Limitar a 20 para memoria
-        })
-        
-    except Exception as e:
-        app.logger.error(f"ERROR: {str(e)}")
-        return jsonify({
-            "text": f"❌ Error: {str(e)}",
-            "chart": {"labels": ["Error"], "values": [0]},
-            "tickets": []
-        }), 500
-
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)      tickets = []
-        if len(results) <= 25:
-            for _, row in results.head(10).iterrows():
-                ticket = {
-                    "id": str(row.get('Identifier', 'N/A')),
-                    "estado": str(row.get('Estado', 'N/A')),
-                    "canal": str(row.get('Canal', 'N/A')),
-                    "fecha": str(row.get('Fecha_de_inicio', 'N/A'))[:10] if row.get('Fecha_de_inicio') else 'N/A'
-                }
-                tickets.append(ticket)
-        
-        # Generar respuesta con Gemini
-        try:
-            model, model_name = get_working_model()
-            response_prompt = f"""
-            Usuario preguntó: "{user_query}"
-            Encontrados: {len(results)} registros
-            
-            Responde como Bruno, analista experto de Smart Reports. Sé específico con los números. Usa emojis. Máximo 2 líneas.
-            """
-            
-            response = model.generate_content(response_prompt)
-            response_text = response.text if response and response.text else f"📊 Se encontraron {len(results)} registros"
-            
-        except:
-            if 'cantidad' in results.columns:
-                total = results['cantidad'].sum()
-                response_text = f"📈 Análisis completado: {len(results)} categorías con {total} registros totales"
-            elif 'total' in results.columns:
-                total = results['total'].iloc[0]
-                response_text = f"📊 Total de registros: {total:,}"
-            else:
-                response_text = f"🎫 Se encontraron {len(results)} registros para tu consulta"
-        
-        return jsonify({
-            "text": response_text,
-            "chart": chart,
-            "tickets": tickets,
-            "data_count": len(results),
-            "timestamp": current_time
-        })
-        
-    except Exception as e:
-        app.logger.error(f"ERROR: {str(e)}")
-        return jsonify({
-            "text": f"Error: {str(e)}",
-            "chart": None,
-            "tickets": []
-        }), 500
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=5000)
