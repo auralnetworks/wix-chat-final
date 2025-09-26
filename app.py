@@ -102,28 +102,20 @@ def generate_dynamic_sql(user_query):
     - "cuántos tickets de WhatsApp" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'WHATSAPP'
     - "tickets de WhatsApp" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'WHATSAPP'
     - "tickets de Email" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'EMAIL'
-    - "cuántos tickets de Email" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'EMAIL'
-    - "tickets de email" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'EMAIL'
-    - "Canal Email" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'EMAIL'
-    - "tickets de Chat" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'CHAT'
-    - "tickets de Twitter" → SELECT COUNT(*) as cantidad FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'TWITTER'
     - "detalles de WhatsApp" → SELECT Identifier, Canal, Estado, Nick_del_Cliente, Mensajes, Fecha_de_inicio FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'WHATSAPP' LIMIT 20
     - "detalles de Email" → SELECT Identifier, Canal, Estado, Nick_del_Cliente, Mensajes, Fecha_de_inicio FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'EMAIL' LIMIT 20
     - "dame detalles de WhatsApp" → SELECT Identifier, Canal, Estado, Nick_del_Cliente, Mensajes, Fecha_de_inicio FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'WHATSAPP' LIMIT 20
-    - "dame detalles de Email" → SELECT Identifier, Canal, Estado, Nick_del_Cliente, Mensajes, Fecha_de_inicio FROM `{TABLE_ID}` WHERE UPPER(Canal) = 'EMAIL' LIMIT 20
     - "últimos tickets" → SELECT Identifier, Estado, Canal, Fecha_de_inicio FROM `{TABLE_ID}` ORDER BY Fecha_de_inicio DESC LIMIT 20
 
     REGLAS CRÍTICAS:
     1. USA SOLO los campos de la lista disponible
-    2. Para usuarios usa Nick_del_Cliente (NO Client_Name ni UserID)
-    3. Para conteos usa COUNT(*) as cantidad
-    4. Para búsquedas de canal específico USA SIEMPRE: WHERE UPPER(Canal) = 'VALOR_EN_MAYUSCULAS'
-    5. Si usuario dice "email", "Email", "EMAIL" usa WHERE UPPER(Canal) = 'EMAIL'
-    6. Si usuario dice "whatsapp", "WhatsApp", "WHATSAPP" usa WHERE UPPER(Canal) = 'WHATSAPP'
-    7. Si usuario dice "chat", "Chat", "CHAT" usa WHERE UPPER(Canal) = 'CHAT'
-    8. Si usuario dice "twitter", "Twitter", "TWITTER" usa WHERE UPPER(Canal) = 'TWITTER'
-    9. LIMIT 20 máximo
-    10. Solo SQL, sin explicaciones
+    2. Para búsquedas de canal específico USA SIEMPRE: WHERE UPPER(Canal) = 'VALOR_EN_MAYUSCULAS'
+    3. Si usuario dice "email", "Email", "EMAIL" usa WHERE UPPER(Canal) = 'EMAIL'
+    4. Si usuario dice "whatsapp", "WhatsApp", "WHATSAPP" usa WHERE UPPER(Canal) = 'WHATSAPP'
+    5. Si usuario dice "chat", "Chat", "CHAT" usa WHERE UPPER(Canal) = 'CHAT'
+    6. Si usuario dice "twitter", "Twitter", "TWITTER" usa WHERE UPPER(Canal) = 'TWITTER'
+    7. LIMIT 20 máximo
+    8. Solo SQL, sin explicaciones
 
     SQL:
     """
@@ -239,39 +231,6 @@ def query_data():
             - Usa emojis para hacer la respuesta mas visual
             - Responde en espanol de forma conversacional y profesional
             - IMPORTANTE: Si la consulta es sobre un canal especifico (WhatsApp, Email, etc.) y los datos incluyen la columna Canal, analiza SOLO los registros de ese canal
-            
-            RESPUESTA:
-            """
-            
-            response = model.generate_content(response_prompt)
-            text_response = response.text if response and response.text else f"Hola! Soy Bruno. Encontre {len(results)} registros."
-        except Exception as e:
-            app.logger.error(f"GEMINI ERROR: {str(e)}")
-            text_response = f"Hola! Soy Bruno. Encontre {len(results)} registros."
-        
-        return jsonify({
-            "text": text_response,
-            "chart": chart,
-            "tickets": tickets[:20]
-        })
-        
-    except Exception as e:
-        app.logger.error(f"ERROR: {str(e)}")
-        return jsonify({
-            "text": f"Error: {str(e)}",
-            "chart": {"labels": ["Error"], "values": [0]},
-            "tickets": []
-        }), 500
-
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
-            INSTRUCCIONES:
-            - Responde como Bruno, analista experto de Smart Reports en tiempo real
-            - Se especifico con los numeros y datos encontrados
-            - Si son mensajes, tipificaciones, sentimientos, etc., explica que muestran
-            - Si hay patrones interesantes, mencionalos
-            - Usa emojis para hacer la respuesta mas visual
-            - Responde en espanol de forma conversacional y profesional
             
             RESPUESTA:
             """
