@@ -258,6 +258,54 @@ def query_data():
         model, model_name = get_working_model()
         
         response_prompt = f"""
+        Analiza estos datos y responde en español:
+        
+        CONSULTA: {user_query}
+        DATOS: {len(results)} registros
+        
+        {results.to_string()}
+        
+        Respuesta clara con emojis:
+        """
+        
+        try:
+            response = model.generate_content(response_prompt)
+            text_response = response.text if response and response.text else f"📊 Encontré {len(results)} registros."
+        except:
+            text_response = f"📊 Encontré {len(results)} registros."
+        
+        return jsonify({
+            "text": text_response,
+            "chart": chart,
+            "tickets": tickets[:20]
+        })
+        
+    except Exception as e:
+        app.logger.error(f"ERROR: {str(e)}")
+        return jsonify({
+            "text": f"❌ Error: {str(e)}",
+            "chart": {"labels": ["Error"], "values": [0]},
+            "tickets": []
+        }), 500
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)      tickets = []
+        for _, row in results.iterrows():
+            ticket = {}
+            for col in results.columns:
+                value = row[col]
+                if pd.isna(value):
+                    ticket[col] = None
+                elif isinstance(value, (pd.Timestamp, datetime)):
+                    ticket[col] = value.strftime('%Y-%m-%d %H:%M:%S')
+                else:
+                    ticket[col] = str(value)
+            tickets.append(ticket)
+        
+        # Generar respuesta con Gemini
+        model, model_name = get_working_model()
+        
+        response_prompt = f"""
         Analiza estos datos de tickets y genera una respuesta clara y útil:
         
         CONSULTA ORIGINAL: {user_query}
