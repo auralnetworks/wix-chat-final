@@ -242,6 +242,61 @@ def query_data():
         
         # Generar tickets
         tickets = []
+        for _, row in results.iterrows():
+            ticket = {}
+            for col in results.columns:
+                value = row[col]
+                if pd.isna(value):
+                    ticket[col] = None
+                elif isinstance(value, (pd.Timestamp, datetime)):
+                    ticket[col] = value.strftime('%Y-%m-%d %H:%M:%S')
+                else:
+                    ticket[col] = str(value)
+            tickets.append(ticket)
+        
+        # Generar respuesta con Gemini
+        model, model_name = get_working_model()
+        
+        response_prompt = f"""
+        Analiza estos datos de tickets y genera una respuesta clara y útil:
+        
+        CONSULTA ORIGINAL: {user_query}
+        DATOS ENCONTRADOS: {len(results)} registros
+        
+        RESULTADOS:
+        {results.to_string()}
+        
+        Genera una respuesta en español que:
+        1. Resuma los hallazgos principales
+        2. Use emojis apropiados
+        3. Sea clara y directa
+        4. Incluya números específicos
+        
+        Respuesta:
+        """
+        
+        try:
+            response = model.generate_content(response_prompt)
+            text_response = response.text if response and response.text else f"📊 Encontré {len(results)} registros para tu consulta."
+        except:
+            text_response = f"📊 Encontré {len(results)} registros para tu consulta."
+        
+        return jsonify({
+            "text": text_response,
+            "chart": chart,
+            "tickets": tickets[:20]  # Limitar a 20 para memoria
+        })
+        
+    except Exception as e:
+        app.logger.error(f"ERROR: {str(e)}")
+        return jsonify({
+            "text": f"❌ Error: {str(e)}",
+            "chart": {"labels": ["Error"], "values": [0]},
+            "tickets": []
+        }), 500
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)      tickets = []
         if len(results) <= 25:
             for _, row in results.head(10).iterrows():
                 ticket = {
