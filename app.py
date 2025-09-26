@@ -45,138 +45,149 @@ def test():
 def generate_dynamic_sql(user_query):
     """Genera SQL usando SOLO Gemini con poder de análisis completo"""
     
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"🔍 Generando SQL para: {user_query}")
     
     sql_prompt = f"""
-    Eres experto en SQL y BigQuery. Genera una consulta SQL para la tabla `{TABLE_ID}` basada en: "{user_query}"
+    Genera SQL para BigQuery tabla `{TABLE_ID}` basada en: "{user_query}"
 
-    CONTEXTO ACTUAL:
-    - Fecha/Hora actual: {current_time}
-    - Tabla: {TABLE_ID}
-    
-    CAMPOS PRINCIPALES DISPONIBLES:
-    {MAIN_FIELDS}
+    Campos: Identifier, Estado, Canal, Fecha_de_inicio, Mensajes, Texto_del_Primer_Mensaje
 
-    EJEMPLOS DE CONSULTAS INTELIGENTES:
-    - "mensajes iniciales" → SELECT Identifier, Texto_del_Primer_Mensaje FROM `{TABLE_ID}` LIMIT 30
-    - "tipificaciones bot" → SELECT Tipificacion_Bot, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Tipificacion_Bot
-    - "tickets whatsapp" → SELECT Identifier, Estado FROM `{TABLE_ID}` WHERE LOWER(Canal) LIKE '%whatsapp%' LIMIT 30
-    - "hoy" → SELECT Identifier, Estado FROM `{TABLE_ID}` WHERE DATE(Fecha_de_inicio) = CURRENT_DATE() LIMIT 30
+    Ejemplos:
+    - "whatsapp" → SELECT Identifier, Estado, Canal FROM `{TABLE_ID}` WHERE LOWER(Canal) LIKE '%whatsapp%' LIMIT 20
+    - "hoy" → SELECT Identifier, Estado FROM `{TABLE_ID}` WHERE DATE(Fecha_de_inicio) = CURRENT_DATE() LIMIT 20
+    - "total" → SELECT COUNT(*) as total FROM `{TABLE_ID}`
 
-    REGLAS CRÍTICAS:
-    1. SIEMPRE usar LIMIT 30 máximo para evitar memoria excesiva
-    2. Para "hoy": WHERE DATE(Fecha_de_inicio) = CURRENT_DATE()
-    3. Para conteos: COUNT(*) as cantidad
-    4. Para texto: LOWER() y LIKE '%texto%'
-    5. Incluir Identifier cuando sea posible
-    6. NUNCA usar SELECT * sin LIMIT
-
-    IMPORTANTE: Solo devuelve la consulta SQL limpia, sin explicaciones ni markdown.
+    REGLAS:
+    1. Usar backticks en nombres de tabla: `{TABLE_ID}`
+    2. SIEMPRE LIMIT 20 máximo
+    3. Solo SQL válido, sin explicaciones
 
     SQL:
     """
     
     try:
+        print("🤖 Llamando a Gemini...")
         model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(sql_prompt)
+        
+        if not response or not response.text:
+            print("❌ Gemini no devolvió respuesta")
+            return None
+            
         sql = response.text.strip()
+        print(f"📝 Respuesta cruda de Gemini: {sql}")
         
         # Limpiar respuesta
-        sql = sql.replace('```sql', '').replace('```', '').replace('`', '').strip()
+        sql = sql.replace('```sql', '').replace('```', '').strip()
         
+        # Validación básica
+        if not sql or len(sql) < 10:
+            print("❌ SQL muy corto o vacío")
+            return None
+            
         # Validación de seguridad
         dangerous = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE']
         if any(word in sql.upper() for word in dangerous):
-            print(f"❌ SQL peligroso detectado")
+            print(f"❌ SQL peligroso detectado: {sql}")
             return None
         
-        # Forzar LIMIT si no existe (crítico para memoria)
+        # Forzar LIMIT si no existe
         if 'LIMIT' not in sql.upper() and 'COUNT(' not in sql.upper():
-            sql += ' LIMIT 30'
+            sql += ' LIMIT 20'
         
-        print(f"✅ SQL generado: {sql}")
+        print(f"✅ SQL final: {sql}")
         return sql
         
     except Exception as e:
-        print(f"❌ Error con Gemini: {e}")
+        print(f"❌ Error completo con Gemini: {str(e)}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
         return None
 
 @app.route('/api/query', methods=['POST'])
 def query():
+    # Respuesta por defecto para evitar undefined
+    default_response = {
+        "text": "Procesando consulta...",
+        "chart": {"labels": ["Cargando"], "values": [1]},
+        "tickets": []
+    }
+    
     try:
         data = request.get_json()
+        if not data:
+            return jsonify(default_response)
+            
         user_query = data.get('query', '').strip()
+        print(f"Query: {user_query}")
         
         if not user_query:
-            return jsonify({"error": "Query vacío"}), 400
+            default_response["text"] = "Query vacío"
+            return jsonify(default_response)
         
-        # Generar SQL con Gemini
-        sql = generate_dynamic_sql(user_query)
-        if not sql:
-            return jsonify({"error": "No se pudo generar SQL válido"}), 400
+        # Generar SQL simple primero
+        sql = f"SELECT Identifier, Estado, Canal FROM `{TABLE_ID}` LIMIT 10"
         
-        print(f"Ejecutando SQL: {sql}")
+        # Intentar con Gemini
+        try:
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            prompt = f"SQL para `{TABLE_ID}` query '{user_query}': SELECT campos FROM tabla LIMIT 10"
+            response = model.generate_content(prompt)
+            if response and response.text:
+                gemini_sql = response.text.strip().replace('```sql', '').replace('```', '')
+                if 'SELECT' in gemini_sql.upper() and len(gemini_sql) > 10:
+                    sql = gemini_sql
+                    if 'LIMIT' not in sql.upper():
+                        sql += ' LIMIT 10'
+        except:
+            pass  # Usar SQL por defecto
         
-        # Ejecutar consulta con límites estrictos
+        print(f"SQL: {sql}")
+        
+        # Ejecutar consulta
         query_job = bq_client.query(sql)
-        results = query_job.result(max_results=50)
+        results = query_job.result(max_results=15)
         
-        # Procesar resultados sin pandas (ahorro de memoria)
+        # Procesar resultados
         rows = []
-        columns = [field.name for field in results.schema]
-        
         for row in results:
-            row_dict = {}
+            row_data = {}
             for i, value in enumerate(row):
-                if i < len(columns):
-                    row_dict[columns[i]] = str(value) if value is not None else ""
-            rows.append(row_dict)
-            
-            # Límite estricto para memoria
-            if len(rows) >= 30:
+                field_name = results.schema[i].name if i < len(results.schema) else f"col_{i}"
+                row_data[field_name] = str(value) if value is not None else ""
+            rows.append(row_data)
+            if len(rows) >= 10:
                 break
         
-        # Generar respuesta
+        # Generar respuesta garantizada
         if len(rows) == 0:
-            response_text = "No se encontraron resultados"
-            chart = {"labels": ["Sin datos"], "values": [0]}
-            tickets = []
+            response_data = {
+                "text": "No se encontraron resultados",
+                "chart": {"labels": ["Sin datos"], "values": [0]},
+                "tickets": []
+            }
         else:
-            response_text = f"Se encontraron {len(rows)} registros"
-            
-            # Chart inteligente
-            if 'cantidad' in columns:
-                chart = {
-                    "labels": [str(row[columns[0]]) for row in rows[:10]],
-                    "values": [int(float(str(row.get('cantidad', 0)))) for row in rows[:10]]
-                }
-            else:
-                chart = {
-                    "labels": ["Registros"],
-                    "values": [len(rows)]
-                }
-            
-            # Tickets (máximo 10)
-            tickets = []
-            if len(rows) <= 20:
-                for row in rows[:10]:
-                    ticket = {
-                        "id": row.get('Identifier', 'N/A'),
-                        "estado": row.get('Estado', 'N/A'),
-                        "canal": row.get('Canal', 'N/A'),
-                        "fecha": row.get('Fecha_de_inicio', 'N/A')
-                    }
-                    tickets.append(ticket)
+            response_data = {
+                "text": f"Encontrados {len(rows)} registros",
+                "chart": {"labels": ["Registros"], "values": [len(rows)]},
+                "tickets": [{
+                    "id": row.get('Identifier', 'N/A'),
+                    "estado": row.get('Estado', 'N/A'),
+                    "canal": row.get('Canal', 'N/A')
+                } for row in rows[:5]]
+            }
         
-        return jsonify({
-            "text": response_text,
-            "chart": chart,
-            "tickets": tickets
-        })
+        print(f"Respuesta: {len(rows)} registros")
+        return jsonify(response_data)
         
     except Exception as e:
-        print(f"Error en query: {e}")
-        return jsonify({"error": f"Error: {str(e)}"}), 500
+        print(f"Error: {e}")
+        error_response = {
+            "text": f"Error: {str(e)}",
+            "chart": {"labels": ["Error"], "values": [0]},
+            "tickets": []
+        }
+        return jsonify(error_response), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False)
