@@ -5,8 +5,13 @@ import os
 import pandas as pd
 import tempfile
 from datetime import datetime
+import logging
 
 app = Flask(__name__)
+
+# Configurar logging para que aparezca en Render
+logging.basicConfig(level=logging.INFO)
+app.logger.setLevel(logging.INFO)
 
 # Configuración
 GEMINI_API_KEY = "AIzaSyCbNt5deM5N9zRbaSZAFkGmlbjHvuOuRgk"
@@ -73,6 +78,43 @@ def test():
         "tickets": []
     })
 
+@app.route('/api/debug', methods=['POST'])
+def debug_gemini():
+    """Endpoint para diagnosticar problemas con Gemini"""
+    try:
+        data = request.get_json() or {}
+        test_query = data.get('query', 'tickets por canal')
+        
+        debug_info = {
+            "gemini_api_key_set": bool(GEMINI_API_KEY),
+            "api_key_length": len(GEMINI_API_KEY) if GEMINI_API_KEY else 0,
+            "test_query": test_query,
+            "gemini_response": None,
+            "error": None,
+            "sql_generated": None
+        }
+        
+        # Probar Gemini directamente
+        try:
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            simple_prompt = f"Genera SQL simple para BigQuery: SELECT Canal, COUNT(*) FROM `{TABLE_ID}` GROUP BY Canal"
+            
+            response = model.generate_content(simple_prompt)
+            
+            if response and response.text:
+                debug_info["gemini_response"] = response.text[:200]
+                debug_info["sql_generated"] = response.text.strip().replace('```sql', '').replace('```', '').strip()
+            else:
+                debug_info["error"] = "Gemini no devolvió respuesta"
+                
+        except Exception as e:
+            debug_info["error"] = str(e)
+        
+        return jsonify(debug_info)
+        
+    except Exception as e:
+        return jsonify({"error": f"Error en debug: {str(e)}"}), 500
+
 def generate_dynamic_sql(user_query):
     """Genera SQL dinámicamente usando Gemini EXACTAMENTE como antes"""
     
@@ -119,18 +161,18 @@ def generate_dynamic_sql(user_query):
     """
     
     try:
-        print(f"🤖 Llamando a Gemini 1.5 Flash para: {user_query}")
+        app.logger.info(f"GEMINI: Llamando a Gemini 1.5 Flash para: {user_query}")
         
         # Usar gemini-1.5-flash como reemplazo de gemini-pro
         model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(sql_prompt)
         
         if not response or not response.text:
-            print("❌ Gemini no devolvió respuesta")
+            app.logger.error("GEMINI: No devolvió respuesta")
             return None
             
         sql = response.text.strip()
-        print(f"📝 Respuesta cruda de Gemini: {sql}")
+        app.logger.info(f"GEMINI: Respuesta cruda: {sql[:100]}...")
         
         # Limpiar respuesta EXACTAMENTE como antes
         sql = sql.replace('```sql', '').replace('```', '').strip()
@@ -138,21 +180,21 @@ def generate_dynamic_sql(user_query):
         # Validación de seguridad EXACTA como antes
         dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE']
         if any(keyword in sql.upper() for keyword in dangerous_keywords):
-            print(f"❌ SQL peligroso detectado: {sql}")
+            app.logger.error(f"GEMINI: SQL peligroso detectado: {sql}")
             return None
         
         # Validar que sea SQL válido
         if not sql or len(sql) < 10 or 'SELECT' not in sql.upper():
-            print(f"❌ SQL inválido: {sql}")
+            app.logger.error(f"GEMINI: SQL inválido: {sql}")
             return None
         
-        print(f"✅ SQL válido generado: {sql}")
+        app.logger.info(f"GEMINI: SQL válido generado: {sql}")
         return sql
         
     except Exception as e:
-        print(f"❌ Error completo con Gemini: {str(e)}")
+        app.logger.error(f"GEMINI: Error completo: {str(e)}")
         import traceback
-        print(f"❌ Traceback: {traceback.format_exc()}")
+        app.logger.error(f"GEMINI: Traceback: {traceback.format_exc()}")
         return None
 
 def generate_chart_with_identifiers(results):
@@ -284,15 +326,23 @@ def query_data():
         
         print(f"[{current_time}] Consulta: {user_query}")
         
-        # SIEMPRE generar SQL con Gemini para respuestas dinámicas (como antes)
+        # Intentar generar SQL con Gemini
         sql = generate_dynamic_sql(user_query)
         
         if not sql:
-            print("❌ GEMINI FALLÓ COMPLETAMENTE - Esto no debería pasar")
+            # Crear respuesta de diagnóstico
+            debug_info = {
+                "error": "Gemini falló",
+                "query": user_query,
+                "api_key_set": bool(GEMINI_API_KEY),
+                "suggestion": "Usa /api/debug para más información"
+            }
+            
             return jsonify({
-                "text": "Error: Gemini no pudo generar SQL válida. Revisa los logs del servidor.",
-                "chart": None,
-                "tickets": []
+                "text": f"❌ Error: Gemini no generó SQL válida para '{user_query}'. Usa el endpoint /api/debug para diagnóstico.",
+                "chart": {"labels": ["Error"], "values": [0]},
+                "tickets": [],
+                "debug": debug_info
             }), 400
         
         print(f"SQL generado: {sql}")
