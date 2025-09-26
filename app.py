@@ -70,7 +70,7 @@ def home():
 
 def get_working_model():
     """Encuentra un modelo que funcione"""
-    models = ['gemini-pro', 'models/gemini-2.5-flash', 'models/gemini-1.5-flash']
+    models = ['models/gemini-1.5-pro-latest', 'models/gemini-2.5-flash', 'models/gemini-1.5-flash']
     
     for model_name in models:
         try:
