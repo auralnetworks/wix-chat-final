@@ -70,7 +70,7 @@ def home():
 
 def get_working_model():
     """Encuentra un modelo que funcione"""
-    models = ['models/gemini-1.5-pro-latest', 'models/gemini-2.5-flash', 'models/gemini-1.5-flash']
+    models = ['models/gemini-2.5-flash', 'models/gemini-1.5-flash']
     
     for model_name in models:
         try:
@@ -146,6 +146,7 @@ def generate_dynamic_sql(user_query):
 def query_data():
     try:
         user_query = request.json['query']
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         app.logger.info(f"QUERY: {user_query}")
         
         # Generar SQL con Gemini
@@ -153,7 +154,7 @@ def query_data():
         
         if not sql:
             return jsonify({
-                "text": "❌ Error: No se pudo generar SQL válida",
+                "text": "Error: No se pudo generar SQL válida",
                 "chart": {"labels": ["Error"], "values": [0]},
                 "tickets": []
             }), 400
@@ -162,21 +163,20 @@ def query_data():
         
         # Ejecutar consulta con timeout
         job_config = bigquery.QueryJobConfig(
-            maximum_bytes_billed=100000000,  # 100MB máximo
+            maximum_bytes_billed=100000000,
             use_query_cache=True,
             dry_run=False
         )
         
         query_job = bq_client.query(sql, job_config=job_config)
         
-        # Timeout de 30 segundos
         try:
             results = query_job.result(timeout=30, max_results=50)
             results = results.to_dataframe()
         except Exception as timeout_error:
             app.logger.error(f"TIMEOUT: {str(timeout_error)}")
             return jsonify({
-                "text": "⏰ Consulta muy lenta. Intenta con una consulta más específica.",
+                "text": "Consulta muy lenta. Intenta con una consulta más específica.",
                 "chart": {"labels": ["Timeout"], "values": [0]},
                 "tickets": []
             }), 408
@@ -207,24 +207,11 @@ def query_data():
                     ticket[col] = str(value)
             tickets.append(ticket)
         
-        # Generar respuesta con Gemini - ANÁLISIS DETALLADO
+        # Generar respuesta con Gemini
         try:
             model, model_name = get_working_model()
             
-            # Crear resumen de datos para análisis
-            data_summary = ""
-            if 'cantidad' in results.columns and len(results) > 0:
-                total_tickets = results['cantidad'].sum()
-                top_canal = results.iloc[0, 0]
-                top_cantidad = results.iloc[0]['cantidad']
-                porcentaje = round((top_cantidad / total_tickets) * 100, 1)
-                data_summary = f"Total: {total_tickets:,} tickets. Líder: {top_canal} ({top_cantidad:,} - {porcentaje}%)"
-            else:
-                data_summary = f"{len(results)} registros encontrados"
-            
-            # Preparar contexto rico para Gemini
             data_sample = results.head(10).to_string() if len(results) > 0 else "No hay datos"
-            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
             response_prompt = f"""
             CONSULTA DEL USUARIO: "{user_query}"
@@ -261,87 +248,6 @@ def query_data():
         app.logger.error(f"ERROR: {str(e)}")
         return jsonify({
             "text": f"Error: {str(e)}",
-            "chart": {"labels": ["Error"], "values": [0]},
-            "tickets": []
-        }), 500
-
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)  CONSULTA DEL USUARIO: "{user_query}"
-            TIMESTAMP ACTUAL: {current_time}
-            TOTAL DE REGISTROS: {len(results)}
-            
-            MUESTRA DE DATOS:
-            {data_sample}
-            
-            INSTRUCCIONES:
-            - Responde como Bruno, analista experto de Smart Reports en tiempo real
-            - Sé específico con los números y datos encontrados
-            - Si son mensajes, tipificaciones, sentimientos, etc., explica qué muestran
-            - Si hay patrones interesantes, menciónalos
-            - Usa emojis para hacer la respuesta más visual
-            - Responde en español de forma conversacional y profesional
-            
-            RESPUESTA:
-            """     
-            INSTRUCCIONES CRÍTICAS:
-            - Inicia OBLIGATORIAMENTE con "¡Hola! Soy Bruno 👨💼"
-            - Analiza los números: menciona totales, porcentajes, comparaciones
-            - Si es por canal: "WhatsApp domina con X tickets (Y%), seguido de..."
-            - Usa emojis específicos: 📱 WhatsApp, 📧 Email, 💬 Chat, 🐦 Twitter
-            - Da insights reales: "Esto representa el X% del total", "Y supera a Z por..."
-            - Máximo 4 líneas pero con análisis profundo
-            - NO seas genérico, sé específico con los datos
-            
-            RESPUESTA:
-            """
-            
-            response = model.generate_content(response_prompt)
-            text_response = response.text if response and response.text else f"¡Hola! Soy Bruno 👨💼 Encontré {len(results)} registros."
-        except Exception as e:
-            app.logger.error(f"GEMINI ERROR: {str(e)}")
-            text_response = f"¡Hola! Soy Bruno 👨💼 Encontré {len(results)} registros."
-        
-        return jsonify({
-            "text": text_response,
-            "chart": chart,
-            "tickets": tickets[:20]
-        })
-        
-    except Exception as e:
-        app.logger.error(f"ERROR: {str(e)}")
-        return jsonify({
-            "text": f"❌ Error: {str(e)}",
-            "chart": {"labels": ["Error"], "values": [0]},
-            "tickets": []
-        }), 500
-
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)     
-            INSTRUCCIONES:
-            - Inicia con "¡Hola! Soy Bruno 👨💼"
-            - Da análisis real: menciona números específicos, porcentajes, patrones
-            - Si es por canal, identifica el líder y compara volúmenes
-            - Usa emojis relevantes (📱 WhatsApp, 📧 Email, 💬 Chat, 🐦 Twitter)
-            - Máximo 4 líneas con insights valiosos
-            
-            RESPUESTA:
-            """
-            
-            response = model.generate_content(response_prompt)
-            text_response = response.text if response and response.text else f"¡Hola! Soy Bruno 👨💼 Encontré {len(results)} registros."
-        except:
-            text_response = f"¡Hola! Soy Bruno 👨💼 Encontré {len(results)} registros."
-        
-        return jsonify({
-            "text": text_response,
-            "chart": chart,
-            "tickets": tickets[:20]
-        })
-        
-    except Exception as e:
-        app.logger.error(f"ERROR: {str(e)}")
-        return jsonify({
-            "text": f"❌ Error: {str(e)}",
             "chart": {"labels": ["Error"], "values": [0]},
             "tickets": []
         }), 500
