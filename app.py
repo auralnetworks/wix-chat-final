@@ -74,10 +74,11 @@ def test():
     })
 
 def generate_dynamic_sql(user_query):
-    """Genera SQL dinámicamente usando Gemini 1.5 Flash con TODOS los campos"""
+    """Genera SQL dinámicamente usando Gemini EXACTAMENTE como antes"""
     
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
+    # PROMPT EXACTO como funcionaba antes
     sql_prompt = f"""
     Eres experto en SQL y BigQuery. Genera una consulta SQL para la tabla `{TABLE_ID}` basada en: "{user_query}"
 
@@ -94,20 +95,23 @@ def generate_dynamic_sql(user_query):
     - "tipificaciones bot" → SELECT Tipificacion_Bot, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Tipificacion_Bot
     - "menú inicial" → SELECT Menu_inicial, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Menu_inicial
     - "sentimientos" → SELECT Sentimiento_Inicial, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Sentimiento_Inicial
-    - "tiempos de abordaje" → SELECT Identifier, Tiempo_de_Abordaje__Segundos_ FROM `{TABLE_ID}` WHERE Tiempo_de_Abordaje__Segundos_ IS NOT NULL LIMIT 20
-    - "tickets escalados" → SELECT Identifier, Estado, Canal FROM `{TABLE_ID}` WHERE Escalado = 'true' OR Escalado = '1' LIMIT 20
-    - "tickets por canal" → SELECT Canal, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Canal ORDER BY cantidad DESC
-    - "whatsapp" → SELECT Identifier, Estado, Canal FROM `{TABLE_ID}` WHERE LOWER(Canal) LIKE '%whatsapp%' LIMIT 20
+    - "tiempos de abordaje" → SELECT Identifier, Tiempo_de_Abordaje__Segundos_ FROM `{TABLE_ID}` WHERE Tiempo_de_Abordaje__Segundos_ IS NOT NULL
+    - "tickets escalados" → SELECT * FROM `{TABLE_ID}` WHERE Escalado = 'true' OR Escalado = '1'
+    - "submenu clarita" → SELECT Tipificacion_Sub_Menu_Clarita, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Tipificacion_Sub_Menu_Clarita
+    - "derivaciones bot" → SELECT BOT_DERIVATION_Date, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY BOT_DERIVATION_Date
+    - "tickets fusionados" → SELECT * FROM `{TABLE_ID}` WHERE Tickets_fusionados IS NOT NULL AND Tickets_fusionados != ''
 
     REGLAS IMPORTANTES:
     1. Para "hoy" usa: WHERE DATE(Fecha_de_inicio) = CURRENT_DATE()
     2. Para "ayer" usa: WHERE DATE(Fecha_de_inicio) = DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)
-    3. Para conteos usa COUNT(*) as cantidad
-    4. Para búsquedas de texto usa LOWER() y LIKE '%texto%'
-    5. Incluye siempre Identifier cuando sea posible
-    6. Para campos booleanos usa = 'true' o = '1'
-    7. LIMIT 20 máximo para memoria
-    8. Para mensajes usa Texto_del_Primer_Mensaje o Texto_del_ultimo_Mensaje
+    3. Para comparativos usa UNION ALL
+    4. Para conteos usa COUNT(*) as cantidad
+    5. Para búsquedas de texto usa LOWER() y LIKE '%texto%'
+    6. Incluye siempre Identifier cuando sea posible
+    7. Para campos booleanos usa = 'true' o = '1'
+    8. Para tiempos usa campos como Tiempo_de_Abordaje__Segundos_
+    9. NO uses LIMIT a menos que el usuario pida números específicos
+    10. Para mensajes usa Texto_del_Primer_Mensaje o Texto_del_ultimo_Mensaje
 
     IMPORTANTE: Solo devuelve la consulta SQL, sin explicaciones ni markdown.
 
@@ -115,28 +119,40 @@ def generate_dynamic_sql(user_query):
     """
     
     try:
-        # Usar gemini-1.5-flash (nuevo motor)
+        print(f"🤖 Llamando a Gemini 1.5 Flash para: {user_query}")
+        
+        # Usar gemini-1.5-flash como reemplazo de gemini-pro
         model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(sql_prompt)
-        sql = response.text.strip()
         
-        # Limpiar respuesta
+        if not response or not response.text:
+            print("❌ Gemini no devolvió respuesta")
+            return None
+            
+        sql = response.text.strip()
+        print(f"📝 Respuesta cruda de Gemini: {sql}")
+        
+        # Limpiar respuesta EXACTAMENTE como antes
         sql = sql.replace('```sql', '').replace('```', '').strip()
         
-        # Validación de seguridad
+        # Validación de seguridad EXACTA como antes
         dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'CREATE', 'TRUNCATE']
         if any(keyword in sql.upper() for keyword in dangerous_keywords):
+            print(f"❌ SQL peligroso detectado: {sql}")
             return None
         
-        # Forzar LIMIT para memoria
-        if 'LIMIT' not in sql.upper() and 'COUNT(' not in sql.upper():
-            sql += ' LIMIT 20'
+        # Validar que sea SQL válido
+        if not sql or len(sql) < 10 or 'SELECT' not in sql.upper():
+            print(f"❌ SQL inválido: {sql}")
+            return None
         
-        print(f"✅ SQL Gemini 1.5: {sql}")
+        print(f"✅ SQL válido generado: {sql}")
         return sql
         
     except Exception as e:
-        print(f"❌ Error generando SQL: {e}")
+        print(f"❌ Error completo con Gemini: {str(e)}")
+        import traceback
+        print(f"❌ Traceback: {traceback.format_exc()}")
         return None
 
 def generate_chart_with_identifiers(results):
@@ -268,12 +284,13 @@ def query_data():
         
         print(f"[{current_time}] Consulta: {user_query}")
         
-        # SIEMPRE generar SQL con Gemini para respuestas dinámicas
+        # SIEMPRE generar SQL con Gemini para respuestas dinámicas (como antes)
         sql = generate_dynamic_sql(user_query)
         
         if not sql:
+            print("❌ GEMINI FALLÓ COMPLETAMENTE - Esto no debería pasar")
             return jsonify({
-                "text": "No pude generar una consulta SQL válida. ¿Puedes reformular tu pregunta?",
+                "text": "Error: Gemini no pudo generar SQL válida. Revisa los logs del servidor.",
                 "chart": None,
                 "tickets": []
             }), 400
@@ -293,36 +310,40 @@ def query_data():
         # Generar tickets
         tickets_data = generate_tickets_data(results, user_query)
         
-        # SIEMPRE usar Gemini para respuestas dinámicas y específicas
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        
-        # Preparar contexto rico para Gemini
-        data_sample = results.head(5).to_string() if len(results) > 0 else "No hay datos"
-        
-        response_prompt = f"""
-        CONSULTA DEL USUARIO: "{user_query}"
-        TIMESTAMP ACTUAL: {current_time}
-        TOTAL DE REGISTROS: {len(results)}
-        
-        MUESTRA DE DATOS:
-        {data_sample}
-        
-        INSTRUCCIONES:
-        - Responde como Bruno, analista experto de Smart Reports en tiempo real
-        - Sé específico con los números y datos encontrados
-        - Si son mensajes, tipificaciones, sentimientos, etc., explica qué muestran
-        - Si hay patrones interesantes, menciónalos
-        - Usa emojis para hacer la respuesta más visual
-        - Responde en español de forma conversacional y profesional
-        - Máximo 2-3 líneas
-        
-        RESPUESTA:
-        """
-        
-        response = model.generate_content(response_prompt)
+        # Generar respuesta inteligente con Gemini
+        try:
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            
+            # Contexto simplificado para Gemini
+            columns_info = ", ".join(results.columns.tolist()) if len(results) > 0 else "Sin datos"
+            
+            response_prompt = f"""
+            Usuario preguntó: "{user_query}"
+            Encontrados: {len(results)} registros
+            Columnas: {columns_info}
+            
+            Responde como Bruno, analista experto. Sé específico con los números. Usa emojis. Máximo 2 líneas.
+            
+            Respuesta:
+            """
+            
+            response = model.generate_content(response_prompt)
+            response_text = response.text if response and response.text else f"📈 Se encontraron {len(results)} registros para tu consulta"
+            
+        except Exception as e:
+            print(f"❌ Error respuesta Gemini: {e}")
+            # Fallback para respuesta
+            if 'cantidad' in results.columns:
+                total = results['cantidad'].sum()
+                response_text = f"📈 Análisis completado: {len(results)} categorías con {total} registros totales"
+            elif 'total' in results.columns:
+                total = results['total'].iloc[0]
+                response_text = f"📊 Total de registros: {total:,}"
+            else:
+                response_text = f"🎫 Se encontraron {len(results)} registros para tu consulta"
         
         return jsonify({
-            "text": response.text,
+            "text": response_text,
             "chart": chart_data,
             "tickets": tickets_data,
             "data_count": len(results),
