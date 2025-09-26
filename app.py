@@ -14,9 +14,31 @@ logging.basicConfig(level=logging.INFO)
 app.logger.setLevel(logging.INFO)
 
 # Configuración
-GEMINI_API_KEY = "AIzaSyCbNt5deM5N9zRbaSZAFkGmlbjHvuOuRgk"
+GEMINI_API_KEY = "AIzaSyC7OceU-fwISiyihJsDDv51kMQEAkzEQ0k"
 PROJECT_ID = "esval-435215"
 TABLE_ID = "esval-435215.webhooks.Adereso_WebhookTests"
+
+# TODOS LOS CAMPOS DISPONIBLES
+ALL_FIELDS = """
+ID, Fecha_de_inicio, Hora_de_inicio, Fecha_de_actualizacion, Hora_de_actualizacion, 
+Fecha_de_abordaje, Hora_de_abordaje, Fecha_de_termino, Hora_de_termino, Estado, 
+Detalles_del_estado, Canal, Cuenta_s, Sentimiento_Inicial, Sentimiento_de_Termino, 
+Tiene_mensajes_publicos, Tiene_mensajes_privados, Tiene_ticket_previo, Respondido, 
+Nick_del_Cliente, Asignacion_actual, Primera_asignacion, Ultima_asignacion, 
+Cantidad_de_asignaciones, Mensajes, Mensajes_Enviados, Mensajes_Recibidos, 
+Texto_del_Primer_Mensaje, Texto_del_ultimo_Mensaje, Importante, Abordado, 
+Abordado_en_SLA, Tipificado, Escalado, Tiempo_de_Abordaje__Segundos_, 
+Segundos_Sin_Asignar, Proactivo, Departamento, Cerrado_Por, Abordado_Por, 
+Fecha_de_primer_asignacion_humana, Hora_de_primer_asignacion_humana, 
+Fecha_de_asignacion, Hora_de_asignacion, Creado_en_horario_habil, 
+Tickets_fusionados, Tiempo_asignado_sin_abordaje__Segundos_, 
+Tiempo_de_abordaje_ejecutivo__Segundos_, Abordado_en_SLA_ejecutivo, 
+BOT_DERIVATION_Date, BOT_DERIVATION_Time, Primer_departamento, 
+Ultimo_departamento, Prioridad, Cliente_Principal, Primera_asignacion_humana, 
+Empresa, Grupo, Menu_inicial, Numero_de_servicio, Tipificaciones, 
+Tipificaciones_Anidado_1, Tipificacion_Bot, Tipificacion_Menu_Clarita, 
+Tipificacion_Sub_Menu_Clarita, Identifier
+"""
 
 # Configurar credenciales
 creds_json = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS_JSON')
@@ -44,11 +66,11 @@ def handle_options():
 
 @app.route('/')
 def home():
-    return {"status": "Backend Bruno - Modelos Reales"}
+    return {"status": "Backend Adereso - Siempre con Gemini + Tiempo Real + Todos los Campos"}
 
 def get_working_model():
     """Encuentra un modelo que funcione"""
-    models = ['models/gemini-2.5-flash', 'models/gemini-1.5-flash', 'models/gemini-1.5-pro']
+    models = ['gemini-pro', 'models/gemini-2.5-flash', 'models/gemini-1.5-flash']
     
     for model_name in models:
         try:
@@ -72,15 +94,21 @@ def generate_dynamic_sql(user_query):
     sql_prompt = f"""
     Genera SQL para BigQuery tabla `{TABLE_ID}` basada en: "{user_query}"
 
+    CAMPOS DISPONIBLES:
+    {ALL_FIELDS}
+
     EJEMPLOS:
     - "tickets por canal" → SELECT Canal, COUNT(*) as cantidad FROM `{TABLE_ID}` GROUP BY Canal ORDER BY cantidad DESC
     - "últimos tickets" → SELECT Identifier, Estado, Canal, Fecha_de_inicio FROM `{TABLE_ID}` ORDER BY Fecha_de_inicio DESC LIMIT 20
-    - "whatsapp" → SELECT Identifier, Estado, Canal FROM `{TABLE_ID}` WHERE LOWER(Canal) LIKE '%whatsapp%' LIMIT 20
+    - "últimos usuarios" → SELECT Identifier, Nick_del_Cliente, Canal, Fecha_de_inicio FROM `{TABLE_ID}` ORDER BY Fecha_de_inicio DESC LIMIT 20
+    - "detalles usuarios" → SELECT Nick_del_Cliente, Canal, Estado, Mensajes FROM `{TABLE_ID}` WHERE Nick_del_Cliente IS NOT NULL LIMIT 20
 
     REGLAS:
-    1. Para conteos usa COUNT(*) as cantidad
-    2. LIMIT 20 máximo
-    3. Solo SQL, sin explicaciones
+    1. USA SOLO los campos de la lista disponible
+    2. Para usuarios usa Nick_del_Cliente (NO Client_Name ni UserID)
+    3. Para conteos usa COUNT(*) as cantidad
+    4. LIMIT 20 máximo
+    5. Solo SQL, sin explicaciones
 
     SQL:
     """
