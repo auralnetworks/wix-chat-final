@@ -222,15 +222,28 @@ def query_data():
             else:
                 data_summary = f"{len(results)} registros encontrados"
             
+            # Preparar contexto rico para Gemini
+            data_sample = results.head(10).to_string() if len(results) > 0 else "No hay datos"
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
             response_prompt = f"""
-            Eres Bruno, analista experto de Smart Reports de Adereso.
+            CONSULTA DEL USUARIO: "{user_query}"
+            TIMESTAMP ACTUAL: {current_time}
+            TOTAL DE REGISTROS: {len(results)}
             
-            CONSULTA: "{user_query}"
-            RESUMEN: {data_summary}
+            MUESTRA DE DATOS:
+            {data_sample}
             
-            DATOS COMPLETOS:
-            {results.to_string()}
+            INSTRUCCIONES:
+            - Responde como Bruno, analista experto de Smart Reports en tiempo real
+            - Sé específico con los números y datos encontrados
+            - Si son mensajes, tipificaciones, sentimientos, etc., explica qué muestran
+            - Si hay patrones interesantes, menciónalos
+            - Usa emojis para hacer la respuesta más visual
+            - Responde en español de forma conversacional y profesional
             
+            RESPUESTA:
+            """     
             INSTRUCCIONES CRÍTICAS:
             - Inicia OBLIGATORIAMENTE con "¡Hola! Soy Bruno 👨💼"
             - Analiza los números: menciona totales, porcentajes, comparaciones
