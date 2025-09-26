@@ -92,18 +92,19 @@ def list_models():
         return jsonify({"error": str(e)})
 
 def get_working_model():
-    """Encuentra un modelo que realmente funcione"""
+    """Encuentra un modelo que realmente funcione usando los nombres EXACTOS"""
     
-    # Modelos reales que existen en Gemini API
-    real_models = [
-        'gemini-1.5-flash-latest',
-        'gemini-1.5-pro-latest', 
-        'gemini-pro',
-        'gemini-1.5-flash',
-        'gemini-1.5-pro'
+    # Modelos EXACTOS de tu lista que funcionan
+    exact_models = [
+        'models/gemini-1.5-flash-latest',
+        'models/gemini-1.5-pro-latest', 
+        'models/gemini-1.5-flash',
+        'models/gemini-1.5-pro',
+        'models/gemini-2.5-flash',
+        'models/gemini-2.0-flash'
     ]
     
-    for model_name in real_models:
+    for model_name in exact_models:
         try:
             app.logger.info(f"MODELO: Probando {model_name}")
             model = genai.GenerativeModel(model_name)
